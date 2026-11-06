@@ -1,5 +1,27 @@
 # agent
 
+## Third vertical: B2B supplier card (T12)
+
+Needs the local Postgres and `pnpm build:kernel` once (the kernel gained `tiered_per_unit` and card `minimums`). No network.
+
+```sh
+pnpm sim run fixtures/b2b-01-quote.json              # 750 units: band unit price + small-order handling + GST
+pnpm sim run fixtures/b2b-02-below-moq-refused.json  # 60 bolts, MOQ 100, flag refuse: out_of_policy, escalation, no number
+pnpm sim run fixtures/b2b-03-below-moq-requoted.json # 120 ties, MOQ 500, flag raise_to_min: quoted at 500, reply says so
+pnpm sim run fixtures/b2b-04-tier-boundary.json      # 499 vs 500 units: inclusive upTo, 500 totals LESS than 499
+pnpm sim run fixtures/b2b-05-out-of-coverage.json    # 80,000 units: no_covering_rule
+cargo test --manifest-path kernel/Cargo.toml --test card_b2b --test b2b_properties --test rules_language
+```
+
+- Card: `rate-cards/fictional-b2b-supplier.json` (FICTIONAL). Semantics (all documented in `rate-cards/README.md` and asserted in `kernel/tests/card_b2b.rs`): volume tiers are all-units pricing with an INCLUSIVE `upTo`; MOQ is per product with the card choosing refuse or re-quote-at-minimum; GST is a tax line rounded half-up in integer paise.
+- Property tests (`kernel/tests/b2b_properties.rs`, proptest, JSON in/out): tier boundaries are exact and inclusive for any generated band table; the effective unit price never rises with quantity when band prices are non-increasing; every tax line equals the independent half-up integer formula for any subtotal and bps; total equals the sum of all lines including several tax lines; i64 extremes in quantity, unit price, flat fee and bps never panic and always return a quote, a refusal or a typed `overflow`/`invalid_input`; raise-to-minimum prices exactly the minimum. A mutation check (`<=` to `<` in the band lookup) makes the boundary property fail.
+- Reply: a quote with `adjustments` adds one sentence per adjustment from the card's label ("<label> applies, so this quote is for 500 instead of the 120 you asked for."); the intro echoes the quoted quantity. Both are typed data, never model text. The thread keeps what the customer said (120); only the quote is raised.
+- Eval: 16 labelled B2B enquiries (8 English, 8 Hinglish) in `agent/eval/sets/b2b.jsonl` including tier-boundary, MOQ-refuse, MOQ-requote, out-of-coverage and code-switched numbers ("do hazaar", "paanch sau", "assi hazaar").
+
+Ruling: MOQ refusal reuses the closed `out_of_policy` reason with `ruleGap below_minimum:quantity` (no new enum member); the holding reply is the generic one, so no text is invented for it.
+Ruling: the extra recordings for the new eval cases were added by the documented seed script; the prompt did not change in T12 (the generic `quantity` field was introduced with `extract-v3` in T11).
+Ruling: all-units pricing means a larger order can cost less than a smaller one just under a boundary. That is the documented card behaviour (and a property test pins the unit price, not the total, as the monotone quantity); a card wanting marginal tiers needs a different charge kind.
+
 ## Second vertical: photographer card (T11)
 
 Needs the local Postgres and `pnpm build:kernel` once (the kernel gained `per_unit.included`). No network.

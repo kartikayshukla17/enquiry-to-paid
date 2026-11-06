@@ -1,0 +1,15 @@
+{
+  "id": "b2b-05-out-of-coverage",
+  "comment": "FICTIONAL. 80,000 steel bolts is beyond the card's 50,000-unit coverage: no covering rule, so a refusal and an escalation, never a number. customerRef is a made-up label, not a phone number.",
+  "tenant": { "id": "tenant-brightline", "name": "FICTIONAL: Brightline Fasteners" },
+  "rateCard": "rate-cards/fictional-b2b-supplier.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-206",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "We are tendering for 80000 steel bolts. Quote?",
+      "extracted": { "service": "steel-bolts", "quantity": 80000, "language": "en", "confidenceBps": 9100 }
+    }
+  ]
+}

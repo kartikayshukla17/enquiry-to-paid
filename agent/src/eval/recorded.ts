@@ -95,6 +95,22 @@ export const MISTAKES: Record<string, { why: string; response: RawResponse }> = 
     why: "guesses a service from a vague message but is unsure (below the confidence gate)",
     response: { service: "wedding-shoot", date: null, language: "hinglish", confidenceBps: 5400 },
   },
+  "b2b-en-08": {
+    why: "reads 5000 as 500 (dropped zero), which lands in a dearer unit-price band",
+    response: { service: "nylon-ties", quantity: 500, language: "en", confidenceBps: 8700 },
+  },
+  "b2b-hg-02": {
+    why: "reads 'do hazaar' as 2 and drops 'hazaar', which is below the bolts minimum",
+    response: { service: "steel-bolts", quantity: 2, language: "hinglish", confidenceBps: 8600 },
+  },
+  "b2b-hg-07": {
+    why: "reads 'paanch sau' as 5; the ties minimum raises it to 500, so the quote is still right",
+    response: { service: "nylon-ties", quantity: 5, language: "hinglish", confidenceBps: 8400 },
+  },
+  "b2b-hg-08": {
+    why: "guesses a product from a vague message but is unsure (below the confidence gate)",
+    response: { service: "steel-bolts", language: "hinglish", confidenceBps: 5200 },
+  },
 };
 
 /** The raw JSON the scripted model returns for a case. */

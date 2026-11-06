@@ -64,17 +64,27 @@ export function formatInstantInZone(iso: string, timeZone: string): string {
 
 function quoteTemplate(q: Quote, f: ExtractedFields, ctx: ReplyContext = {}): ReplyTemplate {
   const hasEcho = f.guestCount !== undefined && f.date;
+  // The quantity actually priced: a card floor may have raised what the customer asked for.
+  const adjustments = q.adjustments ?? [];
+  const quoted = adjustments.find((a) => a.field === "quantity")?.to ?? f.quantity;
+  const hasQuantity = !hasEcho && quoted !== undefined;
   const intro = hasEcho
     ? "Thank you for your enquiry! Here is your quote for {{guestCount}} guests on {{date}}:"
-    : "Thank you for your enquiry! Here is your quote:";
+    : hasQuantity
+      ? "Thank you for your enquiry! Here is your quote for {{quantity}} units:"
+      : "Thank you for your enquiry! Here is your quote:";
   return {
     kind: "quote",
     template: [
-      intro, "", "{{lines}}", "", "Total: {{total}}", "This quote is valid until {{validUntil}}.",
+      intro, "", "{{lines}}", "", ...(adjustments.length > 0 ? ["{{notes}}", ""] : []), "Total: {{total}}", "This quote is valid until {{validUntil}}.",
       ...(ctx.holdUntil !== undefined ? ["Your date is held for you until {{holdUntil}}."] : []),
     ].join("\n"),
     values: {
       ...(hasEcho && { guestCount: String(f.guestCount), date: formatDate(f.date as string) }),
+      ...(hasQuantity && { quantity: String(quoted) }),
+      ...(adjustments.length > 0 && {
+        notes: adjustments.map((a) => `${a.label} applies, so this quote is for ${a.to} instead of the ${a.from} you asked for.`).join("\n"),
+      }),
       lines: q.lines.map((l) => `- ${l.label}: ${formatMoney(l.amount, q.currency)}`).join("\n"),
       total: formatMoney(q.total, q.currency),
       validUntil: formatDate(q.validUntil),

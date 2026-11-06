@@ -1,0 +1,15 @@
+{
+  "id": "b2b-01-quote",
+  "comment": "FICTIONAL one-message order for the fictional B2B supplier card: 750 steel bolts, in the 500-1999 volume band, small-order handling applies. customerRef is a made-up label, not a phone number.",
+  "tenant": { "id": "tenant-brightline", "name": "FICTIONAL: Brightline Fasteners" },
+  "rateCard": "rate-cards/fictional-b2b-supplier.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-201",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "Please quote 750 steel bolts for our workshop.",
+      "extracted": { "service": "steel-bolts", "quantity": 750, "language": "en", "confidenceBps": 9200 }
+    }
+  ]
+}

@@ -5,6 +5,15 @@ export interface QuoteLine {
   ruleId: string;
 }
 
+/** A card floor (e.g. a minimum order quantity) that raised a field before pricing; the reply must say so. */
+export interface Adjustment {
+  ruleId: string;
+  label: string;
+  field: string;
+  from: number;
+  to: number;
+}
+
 export interface Quote {
   kind: "quote";
   rateCardHash: string;
@@ -12,6 +21,8 @@ export interface Quote {
   total: number;
   validUntil: string;
   lines: QuoteLine[];
+  /** Present only when a floor raised a field. */
+  adjustments?: Adjustment[];
 }
 
 /** Mirrors `RefusalReason::code()` in kernel/src/eval.rs. Closed set. */

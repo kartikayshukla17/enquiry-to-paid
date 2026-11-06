@@ -17,61 +17,68 @@
         "path": "rate-cards/fictional-photographer.json",
         "id": "fictional-photographer",
         "hash": "1b80ad74bfe8be4d7ddef8dc8f243979763cea096c2286943650453f947904a7"
+      },
+      {
+        "path": "rate-cards/fictional-b2b-supplier.json",
+        "id": "fictional-b2b-supplier",
+        "hash": "95c85f3f3efac317f9119c7718b0689ae68f4c66f16f4239703a2b565ebd25df"
       }
     ],
     "scenarioNow": "2026-11-07T10:00:00Z"
   },
   "inputs": {
-    "caseCount": 51,
+    "caseCount": 67,
     "setHashes": {
+      "b2b.jsonl": "ae1647d8790fb2851f8cfa683d7f5b7d32959d8f0134422ac74fe88c696937bd",
       "en.jsonl": "72360fd045d68e79a787d51c4f47b8b4ce7c1a5218ccb8eac73c2d9013a26001",
       "hinglish.jsonl": "297b5790194b93ea41b770682b88356d51da2d3e5452fc77d50191373609f38c",
       "photographer.jsonl": "05c15e7e961d2da507bea71ea670a2b3dadf50b3999fe190a58804a61616a100"
     },
-    "recordingsHash": "0035a5f6bd4bf7778656e9a591810d7edd93445a09bfbc6072ca7c13299f4090"
+    "recordingsHash": "10e03645ec9d726daafec5c85ec4509f4837496ad138ecda766379ebff62b22c"
   },
   "languages": {
     "en": {
-      "cases": 24,
+      "cases": 32,
       "extraction": {
-        "fieldsCorrect": 116,
-        "fieldsTotal": 127,
-        "fieldAccuracyBps": 9134,
+        "fieldsCorrect": 139,
+        "fieldsTotal": 151,
+        "fieldAccuracyBps": 9205,
         "perFieldCorrect": {
-          "service": 23,
+          "service": 31,
           "date": 21,
           "guestCount": 14,
           "locality": 15,
-          "language": 23,
+          "language": 31,
           "package": 7,
-          "quantity": 0,
+          "quantity": 7,
           "hours": 7,
           "distanceKm": 6
         },
         "perFieldTotal": {
-          "service": 24,
+          "service": 32,
           "date": 24,
           "guestCount": 17,
           "locality": 17,
-          "language": 24,
+          "language": 32,
           "package": 7,
-          "quantity": 0,
+          "quantity": 8,
           "hours": 7,
           "distanceKm": 7
         },
-        "schemaValid": 23,
-        "schemaValidBps": 9583,
-        "meanConfidenceBps": 8778
+        "schemaValid": 31,
+        "schemaValidBps": 9688,
+        "meanConfidenceBps": 8826
       },
       "pipeline": {
-        "outcomeCorrect": 20,
-        "outcomeAccuracyBps": 8333,
+        "outcomeCorrect": 28,
+        "outcomeAccuracyBps": 8750,
         "unsafeQuotes": 1,
         "unsafeCaseIds": [
           "en-09"
         ],
-        "wrongPriceQuotes": 2,
+        "wrongPriceQuotes": 3,
         "wrongPriceCaseIds": [
+          "b2b-en-08",
           "en-02",
           "ph-en-07"
         ],
@@ -79,40 +86,40 @@
       }
     },
     "hinglish": {
-      "cases": 23,
+      "cases": 31,
       "extraction": {
-        "fieldsCorrect": 108,
-        "fieldsTotal": 122,
-        "fieldAccuracyBps": 8852,
+        "fieldsCorrect": 130,
+        "fieldsTotal": 146,
+        "fieldAccuracyBps": 8904,
         "perFieldCorrect": {
-          "service": 22,
+          "service": 30,
           "date": 18,
           "guestCount": 12,
           "locality": 15,
-          "language": 21,
+          "language": 29,
           "package": 7,
-          "quantity": 0,
+          "quantity": 6,
           "hours": 7,
           "distanceKm": 6
         },
         "perFieldTotal": {
-          "service": 23,
+          "service": 31,
           "date": 23,
           "guestCount": 16,
           "locality": 16,
-          "language": 23,
+          "language": 31,
           "package": 7,
-          "quantity": 0,
+          "quantity": 8,
           "hours": 7,
           "distanceKm": 7
         },
-        "schemaValid": 22,
-        "schemaValidBps": 9565,
-        "meanConfidenceBps": 8436
+        "schemaValid": 30,
+        "schemaValidBps": 9677,
+        "meanConfidenceBps": 8427
       },
       "pipeline": {
-        "outcomeCorrect": 15,
-        "outcomeAccuracyBps": 6522,
+        "outcomeCorrect": 21,
+        "outcomeAccuracyBps": 6774,
         "unsafeQuotes": 1,
         "unsafeCaseIds": [
           "hg-04"
@@ -121,7 +128,7 @@
         "wrongPriceCaseIds": [
           "ph-hg-06"
         ],
-        "missedQuotes": 4
+        "missedQuotes": 5
       }
     },
     "hi": {
@@ -168,52 +175,53 @@
     }
   },
   "overall": {
-    "cases": 51,
+    "cases": 67,
     "extraction": {
-      "fieldsCorrect": 242,
-      "fieldsTotal": 269,
-      "fieldAccuracyBps": 8996,
+      "fieldsCorrect": 287,
+      "fieldsTotal": 317,
+      "fieldAccuracyBps": 9054,
       "perFieldCorrect": {
-        "service": 49,
+        "service": 65,
         "date": 43,
         "guestCount": 29,
         "locality": 34,
-        "language": 47,
+        "language": 63,
         "package": 14,
-        "quantity": 0,
+        "quantity": 13,
         "hours": 14,
         "distanceKm": 12
       },
       "perFieldTotal": {
-        "service": 51,
+        "service": 67,
         "date": 51,
         "guestCount": 37,
         "locality": 37,
-        "language": 51,
+        "language": 67,
         "package": 14,
-        "quantity": 0,
+        "quantity": 16,
         "hours": 14,
         "distanceKm": 14
       },
-      "schemaValid": 49,
-      "schemaValidBps": 9608,
-      "meanConfidenceBps": 8620
+      "schemaValid": 65,
+      "schemaValidBps": 9701,
+      "meanConfidenceBps": 8635
     },
     "pipeline": {
-      "outcomeCorrect": 39,
-      "outcomeAccuracyBps": 7647,
+      "outcomeCorrect": 53,
+      "outcomeAccuracyBps": 7910,
       "unsafeQuotes": 2,
       "unsafeCaseIds": [
         "en-09",
         "hg-04"
       ],
-      "wrongPriceQuotes": 3,
+      "wrongPriceQuotes": 4,
       "wrongPriceCaseIds": [
+        "b2b-en-08",
         "en-02",
         "ph-en-07",
         "ph-hg-06"
       ],
-      "missedQuotes": 5
+      "missedQuotes": 6
     }
   },
   "cards": {
@@ -324,9 +332,307 @@
       "goldRefusalShareBps": 2143,
       "outOfCoverageQuotes": 0,
       "outOfCoverageCaseIds": []
+    },
+    "fictional-b2b-supplier": {
+      "cases": 16,
+      "extraction": {
+        "fieldsCorrect": 45,
+        "fieldsTotal": 48,
+        "fieldAccuracyBps": 9375,
+        "perFieldCorrect": {
+          "service": 16,
+          "date": 0,
+          "guestCount": 0,
+          "locality": 0,
+          "language": 16,
+          "package": 0,
+          "quantity": 13,
+          "hours": 0,
+          "distanceKm": 0
+        },
+        "perFieldTotal": {
+          "service": 16,
+          "date": 0,
+          "guestCount": 0,
+          "locality": 0,
+          "language": 16,
+          "package": 0,
+          "quantity": 16,
+          "hours": 0,
+          "distanceKm": 0
+        },
+        "schemaValid": 16,
+        "schemaValidBps": 10000,
+        "meanConfidenceBps": 8681
+      },
+      "pipeline": {
+        "outcomeCorrect": 14,
+        "outcomeAccuracyBps": 8750,
+        "unsafeQuotes": 0,
+        "unsafeCaseIds": [],
+        "wrongPriceQuotes": 1,
+        "wrongPriceCaseIds": [
+          "b2b-en-08"
+        ],
+        "missedQuotes": 1
+      },
+      "quotes": 8,
+      "refusals": 6,
+      "clarifications": 2,
+      "refusalShareBps": 3750,
+      "goldRefusals": 4,
+      "goldRefusalShareBps": 2500,
+      "outOfCoverageQuotes": 0,
+      "outOfCoverageCaseIds": []
     }
   },
   "cases": [
+    {
+      "id": "b2b-en-01",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "en",
+      "text": "We need 750 steel bolts for a fabrication job. What is your price?",
+      "schemaValid": true,
+      "confidenceBps": 9000,
+      "wrongFields": [],
+      "gold": "quote",
+      "got": "quote",
+      "outcomeOk": true,
+      "unsafe": false,
+      "wrongPrice": false
+    },
+    {
+      "id": "b2b-en-02",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "en",
+      "text": "Quote for 2000 steel bolts please.",
+      "schemaValid": true,
+      "confidenceBps": 9000,
+      "wrongFields": [],
+      "gold": "quote",
+      "got": "quote",
+      "outcomeOk": true,
+      "unsafe": false,
+      "wrongPrice": false
+    },
+    {
+      "id": "b2b-en-03",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "en",
+      "text": "Looking for 499 steel bolts, can you send a price?",
+      "schemaValid": true,
+      "confidenceBps": 9000,
+      "wrongFields": [],
+      "gold": "quote",
+      "got": "quote",
+      "outcomeOk": true,
+      "unsafe": false,
+      "wrongPrice": false
+    },
+    {
+      "id": "b2b-en-04",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "en",
+      "text": "How much for 60 steel bolts?",
+      "schemaValid": true,
+      "confidenceBps": 9000,
+      "wrongFields": [],
+      "gold": "refuse:out_of_policy",
+      "got": "refuse:out_of_policy",
+      "outcomeOk": true,
+      "unsafe": false,
+      "wrongPrice": false
+    },
+    {
+      "id": "b2b-en-05",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "en",
+      "text": "We want 120 nylon ties for a small batch.",
+      "schemaValid": true,
+      "confidenceBps": 9000,
+      "wrongFields": [],
+      "gold": "quote",
+      "got": "quote",
+      "outcomeOk": true,
+      "unsafe": false,
+      "wrongPrice": false
+    },
+    {
+      "id": "b2b-en-06",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "en",
+      "text": "Need a price for 80000 steel bolts for a tender.",
+      "schemaValid": true,
+      "confidenceBps": 9000,
+      "wrongFields": [],
+      "gold": "refuse:no_covering_rule",
+      "got": "refuse:no_covering_rule",
+      "outcomeOk": true,
+      "unsafe": false,
+      "wrongPrice": false
+    },
+    {
+      "id": "b2b-en-07",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "en",
+      "text": "Do you supply steel bolts? We need a quote.",
+      "schemaValid": true,
+      "confidenceBps": 9000,
+      "wrongFields": [],
+      "gold": "clarify",
+      "got": "clarify",
+      "outcomeOk": true,
+      "unsafe": false,
+      "wrongPrice": false
+    },
+    {
+      "id": "b2b-en-08",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "en",
+      "text": "I need 5000 nylon ties for our assembly line.",
+      "schemaValid": true,
+      "confidenceBps": 8700,
+      "wrongFields": [
+        "quantity"
+      ],
+      "gold": "quote",
+      "got": "quote",
+      "outcomeOk": true,
+      "unsafe": false,
+      "wrongPrice": true
+    },
+    {
+      "id": "b2b-hg-01",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "hinglish",
+      "text": "Bhai 750 steel bolts ka rate bhej do.",
+      "schemaValid": true,
+      "confidenceBps": 9000,
+      "wrongFields": [],
+      "gold": "quote",
+      "got": "quote",
+      "outcomeOk": true,
+      "unsafe": false,
+      "wrongPrice": false
+    },
+    {
+      "id": "b2b-hg-02",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "hinglish",
+      "text": "Do hazaar steel bolts chahiye, kya rate hoga?",
+      "schemaValid": true,
+      "confidenceBps": 8600,
+      "wrongFields": [
+        "quantity"
+      ],
+      "gold": "quote",
+      "got": "refuse:out_of_policy",
+      "outcomeOk": false,
+      "unsafe": false,
+      "wrongPrice": false
+    },
+    {
+      "id": "b2b-hg-03",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "hinglish",
+      "text": "60 steel bolts chahiye, rate batao.",
+      "schemaValid": true,
+      "confidenceBps": 9000,
+      "wrongFields": [],
+      "gold": "refuse:out_of_policy",
+      "got": "refuse:out_of_policy",
+      "outcomeOk": true,
+      "unsafe": false,
+      "wrongPrice": false
+    },
+    {
+      "id": "b2b-hg-04",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "hinglish",
+      "text": "Nylon ties chahiye, 120 piece, kitna padega?",
+      "schemaValid": true,
+      "confidenceBps": 9000,
+      "wrongFields": [],
+      "gold": "quote",
+      "got": "quote",
+      "outcomeOk": true,
+      "unsafe": false,
+      "wrongPrice": false
+    },
+    {
+      "id": "b2b-hg-05",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "hinglish",
+      "text": "Nylon ties ka rate bhejo, kitne chahiye abhi pata nahi.",
+      "schemaValid": true,
+      "confidenceBps": 9000,
+      "wrongFields": [],
+      "gold": "clarify",
+      "got": "clarify",
+      "outcomeOk": true,
+      "unsafe": false,
+      "wrongPrice": false
+    },
+    {
+      "id": "b2b-hg-06",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "hinglish",
+      "text": "Assi hazaar steel bolts ka tender hai, rate bhej do.",
+      "schemaValid": true,
+      "confidenceBps": 9000,
+      "wrongFields": [],
+      "gold": "refuse:no_covering_rule",
+      "got": "refuse:no_covering_rule",
+      "outcomeOk": true,
+      "unsafe": false,
+      "wrongPrice": false
+    },
+    {
+      "id": "b2b-hg-07",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "hinglish",
+      "text": "Paanch sau nylon ties chahiye.",
+      "schemaValid": true,
+      "confidenceBps": 8400,
+      "wrongFields": [
+        "quantity"
+      ],
+      "gold": "quote",
+      "got": "quote",
+      "outcomeOk": true,
+      "unsafe": false,
+      "wrongPrice": false
+    },
+    {
+      "id": "b2b-hg-08",
+      "card": "fictional-b2b-supplier",
+      "scoredFieldCount": 3,
+      "lang": "hinglish",
+      "text": "Kuch bolts chahiye, pata nahi kitne.",
+      "schemaValid": true,
+      "confidenceBps": 5200,
+      "wrongFields": [],
+      "gold": "clarify",
+      "got": "refuse:low_confidence",
+      "outcomeOk": false,
+      "unsafe": false,
+      "wrongPrice": false
+    },
     {
       "id": "en-01",
       "card": "fictional-banquet",

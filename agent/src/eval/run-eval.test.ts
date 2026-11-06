@@ -100,7 +100,7 @@ describe("runEval (the function behind `pnpm eval`)", () => {
 
   describe("per rate card (the card dimension)", () => {
     it("reports one engine over every card that has labelled cases, in a fixed order", () => {
-      expect(Object.keys(report.cards)).toEqual(["fictional-banquet", "fictional-photographer"]);
+      expect(Object.keys(report.cards)).toEqual(["fictional-banquet", "fictional-photographer", "fictional-b2b-supplier"]);
       expect(report.provenance.rateCards.map((c) => c.id)).toEqual(Object.keys(report.cards));
       for (const c of report.provenance.rateCards) expect(c.hash).toMatch(/^[0-9a-f]{64}$/);
       expect(Object.values(report.cards).reduce((n, c) => n + c.cases, 0)).toBe(report.overall.cases);
@@ -124,6 +124,17 @@ describe("runEval (the function behind `pnpm eval`)", () => {
       expect(m.pipeline.wrongPriceCaseIds).toEqual(["ph-en-07", "ph-hg-06"]);
       expect(m.extraction.perFieldTotal.package).toBeGreaterThan(0);
       expect(m.extraction.perFieldTotal.guestCount).toBe(0);
+    });
+
+    it("prices B2B supplier enquiries on the same engine: MOQ refusal, MOQ re-quote and tier boundaries in the cases", () => {
+      const b2b = report.cases.filter((c) => c.card === "fictional-b2b-supplier");
+      expect(b2b.length).toBeGreaterThanOrEqual(8);
+      expect(new Set(b2b.map((c) => c.lang))).toEqual(new Set(["en", "hinglish"]));
+      const byId = Object.fromEntries(b2b.map((c) => [c.id, c]));
+      expect(byId["b2b-en-04"]).toMatchObject({ gold: "refuse:out_of_policy", got: "refuse:out_of_policy", outcomeOk: true });
+      expect(byId["b2b-en-05"]).toMatchObject({ gold: "quote", got: "quote", wrongPrice: false });
+      expect(byId["b2b-en-08"]).toMatchObject({ got: "quote", wrongPrice: true });
+      expect(byId["b2b-hg-07"]).toMatchObject({ got: "quote", wrongPrice: false, wrongFields: ["quantity"] });
     });
 
     it("never quotes where the labels say no rule covers the case (any card)", () => {

@@ -1,0 +1,15 @@
+{
+  "id": "b2b-02-below-moq-refused",
+  "comment": "FICTIONAL. 60 steel bolts is below that product's minimum order quantity (100) and the card's flag for bolts is refuse: a typed out_of_policy refusal, an escalation, no number. customerRef is a made-up label, not a phone number.",
+  "tenant": { "id": "tenant-brightline", "name": "FICTIONAL: Brightline Fasteners" },
+  "rateCard": "rate-cards/fictional-b2b-supplier.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-202",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "Need 60 steel bolts, can you quote?",
+      "extracted": { "service": "steel-bolts", "quantity": 60, "language": "en", "confidenceBps": 9200 }
+    }
+  ]
+}

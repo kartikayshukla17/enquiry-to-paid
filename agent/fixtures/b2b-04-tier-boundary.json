@@ -1,0 +1,20 @@
+{
+  "id": "b2b-04-tier-boundary",
+  "comment": "FICTIONAL. Two customers on either side of a volume-tier boundary (upTo is inclusive): 499 steel bolts at the lower band, 500 at the next band. With all-units pricing the larger order totals less. customerRefs are made-up labels, not phone numbers.",
+  "tenant": { "id": "tenant-brightline", "name": "FICTIONAL: Brightline Fasteners" },
+  "rateCard": "rate-cards/fictional-b2b-supplier.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-204",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "Quote for 499 steel bolts please.",
+      "extracted": { "service": "steel-bolts", "quantity": 499, "language": "en", "confidenceBps": 9200 }
+    },
+    {
+      "customerRef": "fixture-customer-205",
+      "text": "Quote for 500 steel bolts please.",
+      "extracted": { "service": "steel-bolts", "quantity": 500, "language": "en", "confidenceBps": 9200 }
+    }
+  ]
+}
