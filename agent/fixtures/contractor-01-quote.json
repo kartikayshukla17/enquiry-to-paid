@@ -1,0 +1,15 @@
+{
+  "id": "contractor-01-quote",
+  "comment": "FICTIONAL. One of the few things the fictional contractor card quotes: a single tap repair in a listed locality. customerRef is a made-up label, not a phone number.",
+  "tenant": { "id": "tenant-hearthside", "name": "FICTIONAL: Hearthside Repairs" },
+  "rateCard": "rate-cards/fictional-contractor.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-301",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "My kitchen tap is leaking, can you repair it? I am in Greater Noida West.",
+      "extracted": { "service": "tap-repair", "locality": "greater-noida-west", "quantity": 1, "language": "en", "confidenceBps": 9200 }
+    }
+  ]
+}

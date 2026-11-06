@@ -47,6 +47,8 @@ export interface Refusal {
   kind: "refusal";
   reason: RefusalReason;
   ruleGap?: string;
+  /** The card's `refusalSuggestion` code (a short slug such as a suggested next step), on `no_covering_rule` only. */
+  suggestion?: string;
 }
 
 export type Outcome = Quote | Refusal;

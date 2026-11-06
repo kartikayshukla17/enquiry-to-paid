@@ -1,0 +1,15 @@
+{
+  "id": "contractor-02-renovation",
+  "comment": "FICTIONAL. A bathroom remodel is not something the narrow contractor card prices: no covering rule, an escalation that carries the card's suggested next step (a site visit), and a reply built from the card's own wording. customerRef is a made-up label, not a phone number.",
+  "tenant": { "id": "tenant-hearthside", "name": "FICTIONAL: Hearthside Repairs" },
+  "rateCard": "rate-cards/fictional-contractor.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-302",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "We want one bathroom completely remodelled in Greater Noida West. What will it cost?",
+      "extracted": { "service": "bathroom-remodel", "locality": "greater-noida-west", "quantity": 1, "language": "en", "confidenceBps": 9100 }
+    }
+  ]
+}

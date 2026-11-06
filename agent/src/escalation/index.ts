@@ -10,6 +10,8 @@ export interface EscalationEvent {
   at: string;
   reason: RefusalReason;
   ruleGap?: string;
+  /** The card's suggested next step for this kind of refusal (a short code), when the card names one. */
+  suggestion?: string;
   fields: ExtractedFields;
 }
 
@@ -42,7 +44,8 @@ export function describeReason(reason: RefusalReason): string {
 
 export function formatEscalation(e: EscalationEvent): string {
   const gap = e.ruleGap ? ` ruleGap=${e.ruleGap}` : "";
-  return `[escalation] tenant=${e.tenantId} thread=${e.threadId} reason=${e.reason}${gap} fields=${JSON.stringify(e.fields)} note="${describeReason(e.reason)}"`;
+  const suggestion = e.suggestion ? ` suggestion=${e.suggestion}` : "";
+  return `[escalation] tenant=${e.tenantId} thread=${e.threadId} reason=${e.reason}${gap}${suggestion} fields=${JSON.stringify(e.fields)} note="${describeReason(e.reason)}"`;
 }
 
 export function createLogNotifier(log: (line: string) => void = console.log): Notifier {

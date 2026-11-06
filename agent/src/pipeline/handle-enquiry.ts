@@ -211,6 +211,7 @@ export async function handleEnquiry(
       at: e.now,
       reason: outcome.reason,
       ...(outcome.ruleGap !== undefined && { ruleGap: outcome.ruleGap }),
+      ...(outcome.suggestion !== undefined && { suggestion: outcome.suggestion }),
       fields,
     });
   }

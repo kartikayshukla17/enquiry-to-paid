@@ -110,8 +110,19 @@ export function replyTemplate(outcome: Outcome, fields: ExtractedFields, rateCar
 export function renderReply(outcome: Outcome, fields: ExtractedFields, rateCard?: unknown, ctx: ReplyContext = {}): string {
   const t = replyTemplate(outcome, fields, rateCard, ctx);
   if (t) return fillTemplate(t.template, t.values);
-  if (outcome.kind === "refusal") return holdingReply(outcome.reason);
+  if (outcome.kind === "refusal") return holdingReply(outcome.reason) + suggestionSuffix(outcome, rateCard);
   throw new Error("unreachable");
+}
+
+/**
+ * The card's own wording for the suggested next step, appended to the holding reply when the kernel echoed a
+ * suggestion. Taken verbatim from the card (`refusalSuggestionReply`), never invented, and dropped if it contains a
+ * digit so a holding reply can never state a number.
+ */
+export function suggestionSuffix(outcome: { suggestion?: string }, rateCard: unknown): string {
+  if (outcome.suggestion === undefined) return "";
+  const text = (rateCard as { refusalSuggestionReply?: unknown } | undefined)?.refusalSuggestionReply;
+  return typeof text === "string" && text.trim() !== "" && !/\d/.test(text) ? ` ${text.trim()}` : "";
 }
 
 /**

@@ -1,0 +1,15 @@
+{
+  "id": "contractor-04-over-size-cap",
+  "comment": "FICTIONAL. Six taps is over the card's size cap of three items per job: refused with the site-visit suggestion, never quoted. customerRef is a made-up label, not a phone number.",
+  "tenant": { "id": "tenant-hearthside", "name": "FICTIONAL: Hearthside Repairs" },
+  "rateCard": "rate-cards/fictional-contractor.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-304",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "Six taps across our society need repair, we are in Gaur City.",
+      "extracted": { "service": "tap-repair", "locality": "gaur-city", "quantity": 6, "language": "en", "confidenceBps": 9000 }
+    }
+  ]
+}

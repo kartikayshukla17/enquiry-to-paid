@@ -1,0 +1,15 @@
+{
+  "id": "contractor-03-other-locality",
+  "comment": "FICTIONAL. A job the card does cover (one switch replacement), but in a locality that is not on its list: refused with the site-visit suggestion, never quoted. customerRef is a made-up label, not a phone number.",
+  "tenant": { "id": "tenant-hearthside", "name": "FICTIONAL: Hearthside Repairs" },
+  "rateCard": "rate-cards/fictional-contractor.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-303",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "Need one switch replaced at my place in Sector 62, Noida.",
+      "extracted": { "service": "switch-replacement", "locality": "noida-sector-62", "quantity": 1, "language": "en", "confidenceBps": 9000 }
+    }
+  ]
+}
