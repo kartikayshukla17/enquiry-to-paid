@@ -1,0 +1,60 @@
+{
+  "comment": "FICTIONAL example rate card for tests and demos. Not a real contractor or real prices. Deliberately narrow: only three fixed-price small repairs, for 1-3 items, in two listed localities, are quoted. Everything else (renovations, waterproofing, painting, rewiring, other localities, bigger counts) has no covering rule and is refused with a suggested site visit, because those jobs need someone to look at them.",
+  "currency": "INR",
+  "fictional": true,
+  "holdHours": 24,
+  "id": "fictional-contractor",
+  "label": "FICTIONAL: Hearthside Repairs sample rate card (narrow fixed-price small repairs only)",
+  "refusalSuggestion": "book_site_visit",
+  "refusalSuggestionReply": "For a job like this we usually need to see it first, so a site visit is the best next step. Tell us if you would like our team to arrange one.",
+  "requiredFields": [
+    { "field": "service", "question": "What needs fixing?" },
+    { "field": "locality", "question": "Which locality is the job in?" },
+    { "field": "quantity", "question": "How many items need work?" }
+  ],
+  "rules": [
+    {
+      "ruleId": "tap-repair",
+      "core": true,
+      "label": "Tap repair (first item, visit included)",
+      "when": [
+        { "field": "service", "op": "eq", "value": "tap-repair" },
+        { "field": "locality", "op": "in", "values": ["greater-noida-west", "gaur-city"] },
+        { "field": "quantity", "op": "range", "min": 1, "max": 3 }
+      ],
+      "charge": { "kind": "flat", "amount": 80000 }
+    },
+    {
+      "ruleId": "switch-replacement",
+      "core": true,
+      "label": "Switch replacement (first item, visit included)",
+      "when": [
+        { "field": "service", "op": "eq", "value": "switch-replacement" },
+        { "field": "locality", "op": "in", "values": ["greater-noida-west", "gaur-city"] },
+        { "field": "quantity", "op": "range", "min": 1, "max": 3 }
+      ],
+      "charge": { "kind": "flat", "amount": 60000 }
+    },
+    {
+      "ruleId": "door-lock-fit",
+      "core": true,
+      "label": "Door lock fitting (first item, visit included)",
+      "when": [
+        { "field": "service", "op": "eq", "value": "door-lock-fit" },
+        { "field": "locality", "op": "in", "values": ["greater-noida-west", "gaur-city"] },
+        { "field": "quantity", "op": "range", "min": 1, "max": 3 }
+      ],
+      "charge": { "kind": "flat", "amount": 150000 }
+    },
+    {
+      "ruleId": "additional-items",
+      "label": "Each additional item",
+      "when": [{ "field": "quantity", "op": "range", "min": 2, "max": 3 }],
+      "charge": { "kind": "per_unit", "field": "quantity", "unitAmount": 40000, "included": 1 }
+    }
+  ],
+  "taxLines": [{ "ruleId": "gst-18", "label": "GST 18%", "rateBps": 1800 }],
+  "timezone": "Asia/Kolkata",
+  "validDays": 3,
+  "version": 1
+}
