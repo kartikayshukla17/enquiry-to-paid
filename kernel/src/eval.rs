@@ -26,8 +26,8 @@ pub struct Line {
     pub rule_id: String,
 }
 
-// Variants beyond the first three are produced by later tickets (T6 confidence, T8 discount,
-// T10 calendar, T12 policy); they exist now so the reason set is closed and exhaustively matched.
+// Variants not yet produced (low_confidence is gated in the agent, calendar_mismatch is T10) exist now so
+// the reason set is closed and exhaustively matched.
 #[allow(dead_code)]
 pub enum RefusalReason {
     NoCoveringRule,
@@ -153,12 +153,28 @@ fn tax(amount: i64, bps: i64) -> Result<i64, KernelError> {
 pub fn evaluate(input: Input, rate_card_hash: String) -> Result<Outcome, KernelError> {
     let Input { rate_card: card, fields, availability, now } = input;
 
+    // Negotiation is never the model's or the kernel's to do: a discount, price-match or package-deal
+    // request is handed to the owner whatever else the message contained (intent is a typed enum value).
+    if let Some(Val::Str(i)) = fields.get("intent") {
+        if matches!(i.as_str(), "discount_request" | "negotiation" | "package_deal") {
+            return Ok(refuse(RefusalReason::DiscountRequest, None));
+        }
+    }
+
+    let now_s = date::parse_instant(&now).ok_or(KernelError::Invalid)?;
+
     for r in &card.required_fields {
         if !fields.contains_key(&r.field) {
             return Ok(refuse(RefusalReason::MissingRequiredField, Some(r.field.clone())));
         }
     }
     if let Some(Val::Str(d)) = fields.get("date") {
+        // A date before today (UTC day of `now`) is never quoted; today itself is allowed.
+        if let Some((days, _)) = date::parse_date(d) {
+            if days < now_s.div_euclid(86_400) {
+                return Ok(refuse(RefusalReason::OutOfPolicy, Some("date_in_past".to_string())));
+            }
+        }
         if availability.blocked_dates.iter().any(|b| b == d) {
             return Ok(refuse(RefusalReason::DateUnavailable, None));
         }
@@ -184,7 +200,6 @@ pub fn evaluate(input: Input, rate_card_hash: String) -> Result<Outcome, KernelE
         lines.push(Line { label: t.label.clone(), amount, rule_id: t.rule_id.clone() });
     }
 
-    let now_s = date::parse_instant(&now).ok_or(KernelError::Invalid)?;
     let valid_s = card
         .valid_days
         .checked_mul(86_400)

@@ -62,7 +62,7 @@ fn card() -> impl Strategy<Value = Value> {
 fn fields() -> impl Strategy<Value = Value> {
     (
         prop_oneof![Just("banquet"), Just("photo")],
-        prop::sample::select(vec!["2026-06-13", "2026-12-12", "2026-11-09", "2027-02-26", "2026-04-02"]),
+        prop::sample::select(vec!["2027-06-12", "2026-12-12", "2026-11-09", "2027-02-26", "2027-04-01"]),
         0i64..450,
         prop::sample::subsequence(vec!["service", "date", "guestCount"], 0..=3),
     )

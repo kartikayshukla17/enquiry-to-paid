@@ -16,10 +16,10 @@
     "fields": {
       "service": "banquet",
       "date": "2026-12-15",
-      "guestCount": 60,
+      "guestCount": 80,
       "locality": null,
       "language": "en",
-      "confidenceBps": 9000
+      "confidenceBps": 8800
     }
   }
 }

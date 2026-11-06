@@ -73,10 +73,17 @@ describe("runEval (the function behind `pnpm eval`)", () => {
 
   it("flags a quote with the wrong price (wrong year/guest count extracted) separately", () => {
     const byId = Object.fromEntries(report.cases.map((c) => [c.id, c]));
-    expect(byId["hg-16"]?.got).toBe("quote");
-    expect(byId["hg-16"]?.wrongPrice).toBe(true);
+    expect(byId["en-02"]?.got).toBe("quote");
+    expect(byId["en-02"]?.wrongPrice).toBe(true);
     expect(byId["en-01"]?.wrongPrice).toBe(false);
-    expect(report.languages.hinglish.pipeline.wrongPriceCaseIds).toContain("hg-16");
+    expect(report.languages.en.pipeline.wrongPriceCaseIds).toContain("en-02");
+  });
+
+  it("a misread date that lands in the past is refused by the kernel, not quoted (hg-16 was a wrong-price quote before)", () => {
+    const hg16 = report.cases.find((c) => c.id === "hg-16");
+    expect(hg16?.got).toBe("refuse:out_of_policy");
+    expect(hg16?.wrongPrice).toBe(false);
+    expect(hg16?.unsafe).toBe(false);
   });
 
   it("scores integers only (basis points), never floats", () => {

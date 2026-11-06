@@ -20,36 +20,37 @@
       "en.jsonl": "72360fd045d68e79a787d51c4f47b8b4ce7c1a5218ccb8eac73c2d9013a26001",
       "hinglish.jsonl": "297b5790194b93ea41b770682b88356d51da2d3e5452fc77d50191373609f38c"
     },
-    "recordingsHash": "9f1a06dbf583681b9c4667b18a1be546dd2ad54731b4a47b70d858acd71eb277"
+    "recordingsHash": "4edefc6d6773ddc7566538548cc1c49ded11a65631352361986e8a3dd8376e83"
   },
   "languages": {
     "en": {
       "cases": 17,
       "extraction": {
-        "fieldsCorrect": 76,
+        "fieldsCorrect": 75,
         "fieldsTotal": 85,
-        "fieldAccuracyBps": 8941,
+        "fieldAccuracyBps": 8824,
         "perFieldCorrect": {
           "service": 16,
           "date": 14,
-          "guestCount": 15,
+          "guestCount": 14,
           "locality": 15,
           "language": 16
         },
         "schemaValid": 16,
         "schemaValidBps": 9412,
-        "meanConfidenceBps": 8713
+        "meanConfidenceBps": 8700
       },
       "pipeline": {
         "outcomeCorrect": 13,
         "outcomeAccuracyBps": 7647,
-        "unsafeQuotes": 2,
+        "unsafeQuotes": 1,
         "unsafeCaseIds": [
-          "en-09",
-          "en-17"
+          "en-09"
         ],
-        "wrongPriceQuotes": 0,
-        "wrongPriceCaseIds": [],
+        "wrongPriceQuotes": 1,
+        "wrongPriceCaseIds": [
+          "en-02"
+        ],
         "missedQuotes": 1
       }
     },
@@ -71,18 +72,15 @@
         "meanConfidenceBps": 8460
       },
       "pipeline": {
-        "outcomeCorrect": 11,
-        "outcomeAccuracyBps": 6875,
-        "unsafeQuotes": 2,
+        "outcomeCorrect": 9,
+        "outcomeAccuracyBps": 5625,
+        "unsafeQuotes": 1,
         "unsafeCaseIds": [
-          "hg-04",
-          "hg-05"
+          "hg-04"
         ],
-        "wrongPriceQuotes": 1,
-        "wrongPriceCaseIds": [
-          "hg-16"
-        ],
-        "missedQuotes": 2
+        "wrongPriceQuotes": 0,
+        "wrongPriceCaseIds": [],
+        "missedQuotes": 4
       }
     },
     "hi": {
@@ -116,35 +114,33 @@
   "overall": {
     "cases": 37,
     "extraction": {
-      "fieldsCorrect": 161,
+      "fieldsCorrect": 160,
       "fieldsTotal": 185,
-      "fieldAccuracyBps": 8703,
+      "fieldAccuracyBps": 8649,
       "perFieldCorrect": {
         "service": 35,
         "date": 29,
-        "guestCount": 30,
+        "guestCount": 29,
         "locality": 34,
         "language": 33
       },
       "schemaValid": 35,
       "schemaValidBps": 9459,
-      "meanConfidenceBps": 8606
+      "meanConfidenceBps": 8600
     },
     "pipeline": {
-      "outcomeCorrect": 28,
-      "outcomeAccuracyBps": 7568,
-      "unsafeQuotes": 4,
+      "outcomeCorrect": 26,
+      "outcomeAccuracyBps": 7027,
+      "unsafeQuotes": 2,
       "unsafeCaseIds": [
         "en-09",
-        "en-17",
-        "hg-04",
-        "hg-05"
+        "hg-04"
       ],
       "wrongPriceQuotes": 1,
       "wrongPriceCaseIds": [
-        "hg-16"
+        "en-02"
       ],
-      "missedQuotes": 3
+      "missedQuotes": 5
     }
   },
   "cases": [
@@ -166,13 +162,15 @@
       "lang": "en",
       "text": "Looking to book the banquet hall on 15 December 2026 for a corporate dinner, 60 guests.",
       "schemaValid": true,
-      "confidenceBps": 9000,
-      "wrongFields": [],
+      "confidenceBps": 8800,
+      "wrongFields": [
+        "guestCount"
+      ],
       "gold": "quote",
       "got": "quote",
       "outcomeOk": true,
       "unsafe": false,
-      "wrongPrice": false
+      "wrongPrice": true
     },
     {
       "id": "en-03",
@@ -378,9 +376,9 @@
         "date"
       ],
       "gold": "clarify",
-      "got": "quote",
+      "got": "refuse:out_of_policy",
       "outcomeOk": false,
-      "unsafe": true,
+      "unsafe": false,
       "wrongPrice": false
     },
     {
@@ -421,8 +419,8 @@
         "date"
       ],
       "gold": "quote",
-      "got": "quote",
-      "outcomeOk": true,
+      "got": "refuse:out_of_policy",
+      "outcomeOk": false,
       "unsafe": false,
       "wrongPrice": false
     },
@@ -451,9 +449,9 @@
         "date"
       ],
       "gold": "clarify",
-      "got": "quote",
+      "got": "refuse:out_of_policy",
       "outcomeOk": false,
-      "unsafe": true,
+      "unsafe": false,
       "wrongPrice": false
     },
     {
@@ -608,10 +606,10 @@
         "date"
       ],
       "gold": "quote",
-      "got": "quote",
-      "outcomeOk": true,
+      "got": "refuse:out_of_policy",
+      "outcomeOk": false,
       "unsafe": false,
-      "wrongPrice": true
+      "wrongPrice": false
     },
     {
       "id": "hd-01",

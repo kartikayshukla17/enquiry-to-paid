@@ -15,6 +15,10 @@ export type RawResponse = Record<string, unknown>;
 
 /** Replaces the default response entirely (must restate every key it wants the model to have returned). */
 export const MISTAKES: Record<string, { why: string; response: RawResponse }> = {
+  "en-02": {
+    why: "reads '60 guests' as 80 (a plausible digit slip; still inside the card, so it prices wrongly)",
+    response: { service: "banquet", date: "2026-12-15", guestCount: 80, locality: null, language: "en", confidenceBps: 8800 },
+  },
   "en-09": {
     why: "invents a concrete date for 'next Friday' and is fairly sure of it",
     response: { service: "banquet", date: "2026-11-13", guestCount: 70, locality: null, language: "en", confidenceBps: 8200 },
@@ -52,7 +56,7 @@ export const MISTAKES: Record<string, { why: string; response: RawResponse }> = 
     response: { service: "banquet", date: "2012-11-10", guestCount: 60, locality: null, language: "hinglish", confidenceBps: 7500 },
   },
   "hg-16": {
-    why: "drops the leading digit of the day ('14 November' read as 4 November, a weekday)",
+    why: "drops the leading digit of the day ('14 November' read as 4 November, which is already past)",
     response: { service: "banquet", date: "2026-11-04", guestCount: 45, locality: null, language: "hinglish", confidenceBps: 8900 },
   },
   "hg-09": {

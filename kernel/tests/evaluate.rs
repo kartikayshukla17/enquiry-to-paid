@@ -49,9 +49,9 @@ fn prices_weekend_banquet_with_tax_as_its_own_line() {
 
 #[test]
 fn weekday_outside_peak_uses_weekday_hall_and_no_surcharge() {
-    // 2026-06-03 is a Wednesday; 40 guests -> decor tier 1
+    // 2027-06-02 is a Wednesday; 40 guests -> decor tier 1
     let out = run(
-        json!({"service":"banquet","date":"2026-06-03","guestCount":40,"language":"en","confidenceBps":9000}),
+        json!({"service":"banquet","date":"2027-06-02","guestCount":40,"language":"en","confidenceBps":9000}),
         no_blocks(),
     );
     let ids: Vec<&str> = out["lines"].as_array().unwrap().iter().map(|l| l["ruleId"].as_str().unwrap()).collect();
@@ -142,7 +142,7 @@ fn run_card(card: &str, fields: Value) -> Value {
 
 #[test]
 fn out_of_coverage_refusal_names_the_rule_gap() {
-    let out = run_card(SEASONAL, json!({"service":"banquet","date":"2026-06-13","guestCount":300,"language":"en","confidenceBps":9000}));
+    let out = run_card(SEASONAL, json!({"service":"banquet","date":"2027-06-12","guestCount":300,"language":"en","confidenceBps":9000}));
     assert_eq!(out["kind"], "refusal");
     assert_eq!(out["reason"], "no_covering_rule");
     assert_eq!(out["ruleGap"], "date,guestCount");
@@ -150,7 +150,7 @@ fn out_of_coverage_refusal_names_the_rule_gap() {
 
 #[test]
 fn closest_rule_gap_is_a_single_field_when_only_one_condition_fails() {
-    let out = run_card(SEASONAL, json!({"service":"banquet","date":"2026-06-13","guestCount":120,"language":"en","confidenceBps":9000}));
+    let out = run_card(SEASONAL, json!({"service":"banquet","date":"2027-06-12","guestCount":120,"language":"en","confidenceBps":9000}));
     assert_eq!(out["reason"], "no_covering_rule");
     assert_eq!(out["ruleGap"], "date");
 }
@@ -159,4 +159,52 @@ fn closest_rule_gap_is_a_single_field_when_only_one_condition_fails() {
 fn seasonal_card_still_quotes_inside_coverage() {
     let out = run_card(SEASONAL, json!({"service":"banquet","date":"2026-12-12","guestCount":120,"language":"en","confidenceBps":9000}));
     assert_eq!(out["kind"], "quote");
+}
+
+#[test]
+fn date_in_the_past_is_refused_never_quoted() {
+    // now is 2026-11-07; 2026-01-03 is a Saturday that already happened.
+    let out = run(
+        json!({"service":"banquet","date":"2026-01-03","guestCount":150,"language":"en","confidenceBps":8000}),
+        no_blocks(),
+    );
+    assert_eq!(out["kind"], "refusal");
+    assert_eq!(out["reason"], "out_of_policy");
+    assert_eq!(out["ruleGap"], "date_in_past");
+}
+
+#[test]
+fn today_is_not_in_the_past() {
+    // 2026-11-07 is a Saturday, equal to the date part of now.
+    let out = run(
+        json!({"service":"banquet","date":"2026-11-07","guestCount":100,"language":"en","confidenceBps":9000}),
+        no_blocks(),
+    );
+    assert_eq!(out["kind"], "quote");
+}
+
+#[test]
+fn discount_negotiation_and_package_intents_are_refused_whatever_else_is_present() {
+    for intent in ["discount_request", "negotiation", "package_deal"] {
+        let out = run(
+            json!({"service":"banquet","date":"2026-12-12","guestCount":120,"language":"en","confidenceBps":9200,"intent":intent}),
+            no_blocks(),
+        );
+        assert_eq!(out["kind"], "refusal", "{intent}");
+        assert_eq!(out["reason"], "discount_request", "{intent}");
+    }
+    // Even with nothing else known: a discount request is not a "missing field" question.
+    let out = run(json!({"language":"en","confidenceBps":9000,"intent":"negotiation"}), no_blocks());
+    assert_eq!(out["reason"], "discount_request");
+}
+
+#[test]
+fn ordinary_intents_do_not_block_a_quote() {
+    for intent in ["enquiry", "other"] {
+        let out = run(
+            json!({"service":"banquet","date":"2026-12-12","guestCount":120,"language":"en","confidenceBps":9200,"intent":intent}),
+            no_blocks(),
+        );
+        assert_eq!(out["kind"], "quote", "{intent}");
+    }
 }
