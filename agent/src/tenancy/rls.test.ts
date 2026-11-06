@@ -26,13 +26,16 @@ beforeAll(async () => {
     await p.query("INSERT INTO ledger_heads (tenant_id, last_tenant_seq, last_hash) VALUES ($1,1,'x')", [t]);
     await p.query("INSERT INTO members (id, tenant_id, role) VALUES ($1,$2,'owner')", [`${t}-m`, t]);
     await p.query("INSERT INTO resources (id, tenant_id, location_id, name) VALUES ($1,$2,'loc','Hall')", [`${t}-r`, t]);
+    await p.query("INSERT INTO availability_blocks (tenant_id, resource_id, start_date, end_date) VALUES ($1,$2,'2026-12-12','2026-12-12')", [t, `${t}-r`]);
+    await p.query("INSERT INTO holds (tenant_id, resource_id, thread_id, start_date, end_date, expires_at) VALUES ($1,$2,$3,'2026-12-19','2026-12-19','2027-01-01')", [t, `${t}-r`, `${t}-th`]);
+    await p.query("INSERT INTO timers (tenant_id, kind, subject_id, run_at) VALUES ($1,'hold_expiry','h1','2027-01-01')", [t]);
   }
 });
 afterAll(async () => {
   await db.drop();
 });
 
-const SCOPED = ["tenants", "customers", "threads", "rate_cards", "ledger_entries", "ledger_heads", "members", "resources"];
+const SCOPED = ["tenants", "customers", "threads", "rate_cards", "ledger_entries", "ledger_heads", "members", "resources", "availability_blocks", "holds", "timers"];
 
 describe("row-level security", () => {
   it("app role is neither superuser nor BYPASSRLS", async () => {
@@ -52,7 +55,7 @@ describe("row-level security", () => {
     for (const t of SCOPED) expect(rows.map((r) => r.relname)).toContain(t);
   });
 
-  it.each(["threads", "rate_cards", "customers", "ledger_entries", "members", "resources", "ledger_heads", "tenants"])(
+  it.each(["threads", "rate_cards", "customers", "ledger_entries", "members", "resources", "ledger_heads", "tenants", "availability_blocks", "holds", "timers"])(
     "tenant A cannot see tenant B rows in %s",
     async (table) => {
       const own = await withTenant(db.pool, A, (c) => c.query(`SELECT tenant_id FROM ${table}`));
