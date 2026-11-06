@@ -40,6 +40,19 @@ export interface Refusal {
 
 export type Outcome = Quote | Refusal;
 
+/** The agent answered "are you a bot?" honestly instead of pricing; the kernel was not consulted. */
+export interface Disclosure {
+  kind: "disclosure";
+}
+/** What the pipeline can end a turn with. */
+export type TurnOutcome = Outcome | Disclosure;
+
+/** What the customer is trying to do, as classified by extraction. A closed enum: never free text. */
+export const INTENTS = ["enquiry", "discount_request", "negotiation", "package_deal", "asks_if_bot", "other"] as const;
+export type Intent = (typeof INTENTS)[number];
+/** Intents the owner must handle: the kernel refuses them (reason discount_request). */
+export const NEGOTIATION_INTENTS: readonly Intent[] = ["discount_request", "negotiation", "package_deal"];
+
 /** Typed ExtractedFields: the only customer-derived input the kernel ever sees. */
 export interface ExtractedFields {
   service?: string;
@@ -47,6 +60,8 @@ export interface ExtractedFields {
   guestCount?: number;
   locality?: string;
   language: string;
+  /** Per-message classification; never stored on the thread. Absent means the model did not classify. */
+  intent?: Intent;
   confidenceBps: number; // integer basis points; no floats anywhere
 }
 

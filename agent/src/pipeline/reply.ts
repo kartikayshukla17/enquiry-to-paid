@@ -84,8 +84,9 @@ export function renderReply(outcome: Outcome, fields: ExtractedFields, rateCard?
  */
 export function holdingReply(reason: RefusalReason): string {
   switch (reason) {
-    case "no_covering_rule":
     case "discount_request":
+      return "Thank you for asking! I am not able to change or negotiate prices, so I have passed your request to the owner. They will get back to you shortly.";
+    case "no_covering_rule":
     case "out_of_policy":
     case "low_confidence":
     case "missing_required_field":
@@ -105,4 +106,19 @@ export function holdingReply(reason: RefusalReason): string {
 export function clarifyingQuestion(field: string | undefined, rateCard: unknown): string | undefined {
   const required = (rateCard as { requiredFields?: { field: string; question: string }[] } | undefined)?.requiredFields;
   return required?.find((r) => r.field === field)?.question;
+}
+
+/**
+ * Honest answer to "are you a bot?": static text per language (no model wording, no digits, no price),
+ * naming the business and offering a human. Devanagari customers get Devanagari, Hinglish customers Latin-script Hinglish.
+ */
+export function disclosureReply(language: string, businessName: string): string {
+  switch (language) {
+    case "hinglish":
+      return `Ji, main ${businessName} ka automated assistant hoon, koi insaan nahi. Main rate card ke hisaab se aapki madad kar sakta hoon, aur agar aap chahein to main owner ko baat karne ke liye bula sakta hoon. Bas bol dijiye.`;
+    case "hi":
+      return `जी, मैं ${businessName} का ऑटोमेटेड असिस्टेंट हूँ, कोई इंसान नहीं। मैं रेट कार्ड के हिसाब से आपकी मदद कर सकता हूँ, और आप चाहें तो मैं ओनर को बात करने के लिए बुला सकता हूँ। बस बता दीजिए।`;
+    default:
+      return `I'm an automated assistant for ${businessName}, not a person. I can help with questions and quotes from the owner's rate card, and I can get the owner to take over whenever you like. Just say so.`;
+  }
 }

@@ -1,8 +1,8 @@
-import type { ExtractedFields } from "../kernel/types.js";
+import { INTENTS, type ExtractedFields, type Intent } from "../kernel/types.js";
 
 export type ValidationResult = { ok: true; fields: ExtractedFields } | { ok: false; error: string };
 
-const ALLOWED_KEYS = new Set(["service", "date", "guestCount", "locality", "language", "confidenceBps"]);
+const ALLOWED_KEYS = new Set(["service", "date", "guestCount", "locality", "language", "confidenceBps", "intent"]);
 export const LANGUAGES = ["en", "hi", "hinglish"] as const;
 const SLUG = /^[a-z][a-z0-9-]{0,47}$/; // short identifiers only; a sentence can never match
 
@@ -31,6 +31,10 @@ export function validateExtraction(raw: unknown): ValidationResult {
   }
 
   const out: ExtractedFields = { language, confidenceBps: conf };
+  if (has("intent")) {
+    if (typeof o.intent !== "string" || !(INTENTS as readonly string[]).includes(o.intent)) return { ok: false, error: "intent invalid" };
+    out.intent = o.intent as Intent;
+  }
   if (has("service")) {
     if (typeof o.service !== "string" || !SLUG.test(o.service)) return { ok: false, error: "service invalid" };
     out.service = o.service;

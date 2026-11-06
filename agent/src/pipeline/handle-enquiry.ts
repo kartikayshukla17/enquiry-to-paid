@@ -1,10 +1,10 @@
 import type { Pool } from "pg";
 import type { KernelBridge } from "../kernel/index.js";
-import { KernelError, type Availability, type ExtractedFields, type Outcome } from "../kernel/types.js";
+import { KernelError, NEGOTIATION_INTENTS, type Availability, type ExtractedFields, type Outcome, type TurnOutcome } from "../kernel/types.js";
 import type { Notifier } from "../escalation/index.js";
 import { appendEntry, type LedgerRow } from "../ledger/index.js";
 import type { ReplyWorder } from "../llm/word-reply.js";
-import { holdingReply, renderReply, replyTemplate } from "./reply.js";
+import { disclosureReply, holdingReply, renderReply, replyTemplate } from "./reply.js";
 import { encryptPii, phoneHash, piiKeysFromEnv, type PiiKeys } from "../security/pii.js";
 import { withTenant } from "../tenancy/with-tenant.js";
 
@@ -46,7 +46,7 @@ export function lowConfidenceThreshold(env: Record<string, string | undefined> =
 
 export interface EnquiryResult {
   reply: string;
-  outcome: Outcome;
+  outcome: TurnOutcome;
   ledgerRow: LedgerRow;
   /** The thread's accumulated fields after merging this message. */
   fields: ExtractedFields;
@@ -76,7 +76,10 @@ export async function handleEnquiry(
       [e.threadId, e.tenant.id, customerId],
     );
     // Lock the thread row so concurrent messages merge in order; later fields override earlier ones.
-    const stored = (await client.query<{ fields: Record<string, unknown> }>("SELECT fields FROM threads WHERE id = $1 FOR UPDATE", [e.threadId])).rows[0];
+    const stored = (await client.query<{ fields: Record<string, unknown>; state: string }>("SELECT fields, state FROM threads WHERE id = $1 FOR UPDATE", [e.threadId])).rows[0];
+    // The intent is a per-message classification: it never merges into (or is read back from) the thread.
+    const { intent, ...messageFields } = e.fields;
+    const isBotQuestion = intent === "asks_if_bot";
     const failure = e.extractionFailure;
     const lowConf = !failure && typeof e.fields.confidenceBps === "number" && e.fields.confidenceBps < threshold;
     const gated = failure !== undefined || lowConf;
@@ -92,7 +95,7 @@ export async function handleEnquiry(
     await appendEntry(client, deps.kernel, { ...base, type: "enquiry", payload: { text: e.message }, ...seenBy });
 
     let fields: ExtractedFields;
-    let outcome: Outcome;
+    let outcome: TurnOutcome;
     let reply: string;
     let clarifying = false;
     let wording: Provenance | undefined;
@@ -110,26 +113,34 @@ export async function handleEnquiry(
         ...(e.provenance ?? FIXTURE_PROVENANCE),
       });
     } else {
-      const merged = { ...(stored?.fields ?? {}), ...e.fields } as Record<string, unknown>;
+      const merged = { ...(stored?.fields ?? {}), ...messageFields } as Record<string, unknown>;
       if (typeof merged.language !== "string" || typeof merged.confidenceBps !== "number") {
         throw new Error("extraction must carry language and confidenceBps");
       }
       fields = merged as unknown as ExtractedFields;
-      const raw = deps.kernel.evaluate({
-        rateCard: e.rateCard,
-        fields,
-        availability: e.availability,
-        now: e.now,
-      }) as Outcome | { ok: false; error: string };
-      if (!("kind" in raw)) throw new KernelError(raw.error);
-      outcome = raw;
-      clarifying = outcome.kind === "refusal" && outcome.reason === "missing_required_field";
-      reply = renderReply(outcome, fields, e.rateCard);
-      const t = deps.worder ? replyTemplate(outcome, fields, e.rateCard) : undefined;
-      if (deps.worder && t) {
-        const w = await deps.worder(t.kind, t.template, t.values);
-        reply = w.reply;
-        wording = w.provenance;
+      if (isBotQuestion) {
+        // Honest disclosure: static wording, no kernel call, no quote forced, no escalation. The thread stays as it was.
+        outcome = { kind: "disclosure" };
+        reply = disclosureReply(fields.language, e.tenant.name);
+      } else {
+        // Only a typed negotiation intent crosses to the kernel (as an enum value); the kernel owns the refusal.
+        const kernelFields = intent !== undefined && (NEGOTIATION_INTENTS as readonly unknown[]).includes(intent) ? { ...fields, intent } : fields;
+        const raw = deps.kernel.evaluate({
+          rateCard: e.rateCard,
+          fields: kernelFields,
+          availability: e.availability,
+          now: e.now,
+        }) as Outcome | { ok: false; error: string };
+        if (!("kind" in raw)) throw new KernelError(raw.error);
+        outcome = raw;
+        clarifying = outcome.kind === "refusal" && outcome.reason === "missing_required_field";
+        reply = renderReply(outcome, fields, e.rateCard);
+        const t = deps.worder ? replyTemplate(outcome, fields, e.rateCard) : undefined;
+        if (deps.worder && t) {
+          const w = await deps.worder(t.kind, t.template, t.values);
+          reply = w.reply;
+          wording = w.provenance;
+        }
       }
       await appendEntry(client, deps.kernel, {
         ...base,
@@ -149,7 +160,7 @@ export async function handleEnquiry(
       ...outcomeProv,
     });
     // A clarifying question keeps the thread open; the follow-up message completes it. A gated read leaves stored fields alone.
-    const state = outcome.kind === "quote" ? "quoted" : clarifying ? "open" : "refused";
+    const state = outcome.kind === "disclosure" ? (stored?.state ?? "open") : outcome.kind === "quote" ? "quoted" : clarifying ? "open" : "refused";
     if (gated) await client.query("UPDATE threads SET state = $2 WHERE id = $1", [e.threadId, state]);
     else await client.query("UPDATE threads SET state = $2, fields = $3::jsonb WHERE id = $1", [e.threadId, state, JSON.stringify(fields)]);
     return { outcome, reply, ledgerRow, fields, clarifying };

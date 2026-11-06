@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Pool } from "pg";
 import { createLogNotifier } from "../escalation/index.js";
 import { loadKernel } from "../kernel/index.js";
-import type { Availability, ExtractedFields, Outcome } from "../kernel/types.js";
+import type { Availability, ExtractedFields, TurnOutcome } from "../kernel/types.js";
 import { handleEnquiry } from "../pipeline/handle-enquiry.js";
 import { withTenant } from "../tenancy/with-tenant.js";
 import { REPO_ROOT, resolveFixture } from "./run-fixture.js";
@@ -18,7 +18,7 @@ interface TwoTenantFixture {
 }
 
 export interface TwoTenantReport {
-  tenants: { tenantId: string; reply: string; outcome: Outcome }[];
+  tenants: { tenantId: string; reply: string; outcome: TurnOutcome }[];
   /** For each tenant table, what tenant 1 saw when it asked for tenant 2's rows. */
   crossReads: { reader: string; target: string; table: string; rows: number; allowed: boolean }[];
   /** True when tenant 1 inserting a row stamped with tenant 2's id was rejected by the WITH CHECK. */

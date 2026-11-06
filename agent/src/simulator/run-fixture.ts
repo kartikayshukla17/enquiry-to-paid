@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import type { Pool } from "pg";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
-import type { Availability, ExtractedFields, Outcome } from "../kernel/types.js";
+import type { Availability, ExtractedFields, TurnOutcome } from "../kernel/types.js";
 import type { LedgerRow } from "../ledger/index.js";
 import { createLogNotifier, type Notifier } from "../escalation/index.js";
 import { handleEnquiry } from "../pipeline/handle-enquiry.js";
@@ -32,7 +32,7 @@ interface Fixture {
 
 export interface RunResult {
   reply: string;
-  quote: Outcome;
+  quote: TurnOutcome;
   fields: ExtractedFields & { date: string; guestCount: number };
   ledgerRow: LedgerRow;
   /** One entry per message processed, in order (the top-level fields describe the last). */

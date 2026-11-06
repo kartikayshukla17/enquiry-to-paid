@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Outcome } from "../kernel/types.js";
+import type { TurnOutcome } from "../kernel/types.js";
 
 export const AGENT_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 export const REPO_ROOT = path.join(AGENT_ROOT, "..");
@@ -28,7 +28,7 @@ export interface GoldFields {
   language: string;
 }
 
-export type GoldOutcome = { kind: "quote" } | { kind: "clarify" } | { kind: "refuse"; reason: string };
+export type GoldOutcome = { kind: "quote" } | { kind: "clarify" } | { kind: "disclose" } | { kind: "refuse"; reason: string };
 
 export interface EvalCase {
   id: string;
@@ -67,7 +67,8 @@ export async function loadRateCard(): Promise<unknown> {
 }
 
 /** Pipeline outcome vocabulary: a missing-field refusal is a clarifying question, not a refusal. */
-export function outcomeClass(o: Outcome): { kind: "quote" | "clarify" | "refuse"; reason?: string } {
+export function outcomeClass(o: TurnOutcome): { kind: "quote" | "clarify" | "refuse" | "disclose"; reason?: string } {
+  if (o.kind === "disclosure") return { kind: "disclose" };
   if (o.kind === "quote") return { kind: "quote" };
   if (o.reason === "missing_required_field") return { kind: "clarify" };
   return { kind: "refuse", reason: o.reason };
