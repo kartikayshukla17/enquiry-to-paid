@@ -162,6 +162,60 @@ fn a_minimum_with_conditions_only_applies_when_they_hold() {
     assert_eq!(beta["kind"], "quote");
 }
 
+// ---- refusalSuggestion: a card-chosen next step echoed on "no rule covers this" refusals only ----
+
+fn suggest_card(suggestion: Value) -> Value {
+    let mut c = card(json!([
+        {"ruleId": "base", "core": true, "label": "Base", "when": [{"field": "service", "op": "eq", "value": "small-job"}],
+         "charge": {"kind": "flat", "amount": 1000}}
+    ]));
+    c["requiredFields"] = json!([{"field": "service", "question": "What is the job?"}]);
+    c["refusalSuggestion"] = suggestion;
+    c["refusalSuggestionReply"] = json!("A visit lets us see the job first.");
+    c
+}
+
+#[test]
+fn a_no_covering_rule_refusal_echoes_the_cards_suggestion() {
+    let out = run(suggest_card(json!("book_site_visit")), base(json!({"service": "big-job"})));
+    assert_eq!(out["kind"], "refusal");
+    assert_eq!(out["reason"], "no_covering_rule");
+    assert_eq!(out["suggestion"], "book_site_visit");
+}
+
+#[test]
+fn other_refusals_and_quotes_carry_no_suggestion() {
+    let c = suggest_card(json!("book_site_visit"));
+    let missing = run(c.clone(), base(json!({})));
+    assert_eq!(missing["reason"], "missing_required_field");
+    assert!(missing.get("suggestion").is_none());
+    let haggle = run(c.clone(), base(json!({"service": "small-job", "intent": "negotiation"})));
+    assert_eq!(haggle["reason"], "discount_request");
+    assert!(haggle.get("suggestion").is_none());
+    let quote = run(c, base(json!({"service": "small-job"})));
+    assert_eq!(quote["kind"], "quote");
+    assert!(quote.get("suggestion").is_none());
+}
+
+#[test]
+fn a_card_without_a_suggestion_refuses_exactly_as_before() {
+    let mut c = suggest_card(json!("book_site_visit"));
+    c.as_object_mut().unwrap().remove("refusalSuggestion");
+    c.as_object_mut().unwrap().remove("refusalSuggestionReply");
+    let out = run(c, base(json!({"service": "big-job"})));
+    assert_eq!(out["reason"], "no_covering_rule");
+    assert!(out.get("suggestion").is_none());
+}
+
+#[test]
+fn a_suggestion_that_is_not_a_short_code_is_rejected_so_free_text_cannot_ride_along() {
+    for bad in ["Book a visit now!", "UPPER", "", "has space", "a".repeat(65).as_str()] {
+        let out = run(suggest_card(json!(bad)), base(json!({"service": "big-job"})));
+        assert_eq!(out["ok"], false, "{bad:?}");
+        assert_eq!(out["error"], "invalid_input", "{bad:?}");
+    }
+}
+
 #[test]
 fn a_minimum_on_a_field_the_customer_did_not_give_is_skipped_not_invented() {
     let out = run(moq_card("raise_to_min"), base(json!({})));

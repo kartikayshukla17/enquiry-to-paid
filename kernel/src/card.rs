@@ -144,6 +144,15 @@ pub struct RateCard {
     #[allow(dead_code)]
     #[serde(default)]
     pub offer_alternatives: Option<bool>,
+    /// A short code (`[a-z][a-z0-9_]*`, e.g. a suggested next step) echoed on `no_covering_rule` refusals so the owner's
+    /// escalation can carry it. Absent means none. The kernel only echoes the code; it never reads the reply text.
+    #[serde(default)]
+    pub refusal_suggestion: Option<String>,
+    /// Customer-facing wording for the suggestion, written by the card's owner. Read by the agent (TS), not by pricing;
+    /// declared here because the card format denies unknown fields.
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub refusal_suggestion_reply: Option<String>,
     pub required_fields: Vec<RequiredField>,
     #[serde(default)]
     pub minimums: Vec<Minimum>,

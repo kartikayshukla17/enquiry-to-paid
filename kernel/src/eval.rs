@@ -103,11 +103,22 @@ pub enum Outcome {
         reason: RefusalReason,
         #[serde(skip_serializing_if = "Option::is_none")]
         rule_gap: Option<String>,
+        /// The card's `refusalSuggestion` code, on `no_covering_rule` only.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        suggestion: Option<String>,
     },
 }
 
 fn refuse(reason: RefusalReason, gap: Option<String>) -> Outcome {
-    Outcome::Refusal { reason, rule_gap: gap }
+    Outcome::Refusal { reason, rule_gap: gap, suggestion: None }
+}
+
+/// A suggestion is a short machine code, never prose: it ends up in escalation events and the ledger.
+fn is_code(s: &str) -> bool {
+    let mut chars = s.chars();
+    s.len() <= 64
+        && chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
 fn holds(c: &Cond, f: &Fields) -> bool {
@@ -233,7 +244,12 @@ pub fn evaluate(input: Input, rate_card_hash: String) -> Result<Outcome, KernelE
         lines.push(Line { label: rule.label.clone(), amount, rule_id: rule.rule_id.clone() });
     }
     if !covered {
-        return Ok(refuse(RefusalReason::NoCoveringRule, rule_gap(&card, &fields)));
+        let suggestion = match card.refusal_suggestion.as_deref() {
+            Some(s) if is_code(s) => Some(s.to_string()),
+            Some(_) => return Err(KernelError::Invalid),
+            None => None,
+        };
+        return Ok(Outcome::Refusal { reason: RefusalReason::NoCoveringRule, rule_gap: rule_gap(&card, &fields), suggestion });
     }
 
     let mut total = subtotal;
