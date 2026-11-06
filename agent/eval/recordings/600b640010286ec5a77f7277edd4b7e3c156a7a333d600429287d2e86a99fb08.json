@@ -1,0 +1,26 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Do you also do wedding photography? Wedding is on 5 December 2026, around 200 guests.",
+    "schemaVersion": "extract-v2"
+  },
+  "promptHash": "561b3af9e3452222bca8d3e436fcba48b8a8fadcf2024a9034500eb7426ad3d1",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "photography",
+      "date": "2026-12-05",
+      "guestCount": 200,
+      "locality": null,
+      "language": "en",
+      "confidenceBps": 9000,
+      "intent": "enquiry"
+    }
+  }
+}

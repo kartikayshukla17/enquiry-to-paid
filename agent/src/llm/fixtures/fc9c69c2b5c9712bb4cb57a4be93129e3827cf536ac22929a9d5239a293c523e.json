@@ -1,0 +1,25 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "maybe sometime around the end of this month or early next, something like 100 to 150 people?",
+    "schemaVersion": "extract-v2"
+  },
+  "promptHash": "561b3af9e3452222bca8d3e436fcba48b8a8fadcf2024a9034500eb7426ad3d1",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": null,
+      "guestCount": 120,
+      "locality": null,
+      "language": "en",
+      "confidenceBps": 4200
+    }
+  }
+}

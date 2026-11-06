@@ -1,0 +1,25 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "डेढ़ सौ लोग आएंगे, शादी की तारीख अभी तय नहीं हुई है, बैंक्वेट चाहिए।",
+    "schemaVersion": "extract-v2"
+  },
+  "promptHash": "561b3af9e3452222bca8d3e436fcba48b8a8fadcf2024a9034500eb7426ad3d1",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": null,
+      "guestCount": 100,
+      "locality": null,
+      "language": "hi",
+      "confidenceBps": 8300
+    }
+  }
+}

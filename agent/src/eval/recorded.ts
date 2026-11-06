@@ -89,5 +89,5 @@ export const MISTAKES: Record<string, { why: string; response: RawResponse }> = 
 export function recordedResponse(c: EvalCase): RawResponse {
   const m = MISTAKES[c.id];
   if (m) return m.response;
-  return { ...c.gold, confidenceBps: DEFAULT_CONFIDENCE_BPS };
+  return { ...c.gold, confidenceBps: DEFAULT_CONFIDENCE_BPS, intent: "enquiry" };
 }
