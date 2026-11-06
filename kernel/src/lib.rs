@@ -5,6 +5,7 @@ mod card;
 mod chain;
 mod date;
 mod eval;
+mod validate;
 
 use sha2::{Digest, Sha256};
 
@@ -19,6 +20,22 @@ pub fn rate_card_hash(card_json: &str) -> Result<String, String> {
     let canonical = serde_json::to_string(&v).map_err(|_| err("invalid_input"))?;
     let digest = Sha256::digest(canonical.as_bytes());
     Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// Is this a well-formed rate card? `{ok:true}`, or `{ok:false,error:"invalid_card",path,message}` naming the
+/// JSON path of the first problem (`invalid_input` when it is not JSON at all). Never panics.
+pub fn validate_card(card_json: &str) -> String {
+    if serde_json::from_str::<serde_json::Value>(card_json).is_err() {
+        return err("invalid_input");
+    }
+    let outcome = match serde_json::from_str::<card::RateCard>(card_json) {
+        Ok(card) => validate::validate(&card),
+        Err(e) => Err(validate::Invalid { path: String::new(), message: e.to_string() }),
+    };
+    match outcome {
+        Ok(()) => r#"{"ok":true}"#.to_string(),
+        Err(i) => serde_json::json!({"ok": false, "error": "invalid_card", "path": i.path, "message": i.message}).to_string(),
+    }
 }
 
 /// Hash for one ledger entry (content fields incl. prevHash), or a typed error.
@@ -95,6 +112,13 @@ pub unsafe extern "C" fn evaluate_json(ptr: *const u8, len: usize) -> *mut u8 {
 #[no_mangle]
 pub unsafe extern "C" fn rate_card_hash_json(ptr: *const u8, len: usize) -> *mut u8 {
     export(ptr, len, |s| rate_card_hash(s).unwrap_or_else(|e| e))
+}
+
+/// # Safety
+/// Same contract as `evaluate_json`.
+#[no_mangle]
+pub unsafe extern "C" fn validate_card_json(ptr: *const u8, len: usize) -> *mut u8 {
+    export(ptr, len, validate_card)
 }
 
 /// # Safety
