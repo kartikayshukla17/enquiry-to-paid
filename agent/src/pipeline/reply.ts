@@ -27,20 +27,44 @@ export function formatDate(iso: string): string {
   return `${d} ${MONTHS[(m ?? 1) - 1]} ${y}`;
 }
 
-function renderQuote(q: Quote, f: ExtractedFields): string {
-  const rows = q.lines.map((l) => `- ${l.label}: ${formatMoney(l.amount, q.currency)}`);
-  const intro =
-    f.guestCount !== undefined && f.date
-      ? `Thank you for your enquiry! Here is your quote for ${f.guestCount} guests on ${formatDate(f.date)}:`
-      : "Thank you for your enquiry! Here is your quote:";
-  return [
-    intro,
-    "",
-    ...rows,
-    "",
-    `Total: ${formatMoney(q.total, q.currency)}`,
-    `This quote is valid until ${formatDate(q.validUntil)}.`,
-  ].join("\n");
+export interface ReplyTemplate {
+  kind: "quote" | "clarify";
+  /** Wording with `{{placeholders}}`; contains no digits. */
+  template: string;
+  /** Placeholder values, all formatted from kernel output or typed fields. */
+  values: Record<string, string>;
+}
+
+/** Fills `{{name}}` placeholders; the only way a number enters a reply. */
+export function fillTemplate(template: string, values: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_m, k: string) => values[k] ?? "");
+}
+
+function quoteTemplate(q: Quote, f: ExtractedFields): ReplyTemplate {
+  const hasEcho = f.guestCount !== undefined && f.date;
+  const intro = hasEcho
+    ? "Thank you for your enquiry! Here is your quote for {{guestCount}} guests on {{date}}:"
+    : "Thank you for your enquiry! Here is your quote:";
+  return {
+    kind: "quote",
+    template: [intro, "", "{{lines}}", "", "Total: {{total}}", "This quote is valid until {{validUntil}}."].join("\n"),
+    values: {
+      ...(hasEcho && { guestCount: String(f.guestCount), date: formatDate(f.date as string) }),
+      lines: q.lines.map((l) => `- ${l.label}: ${formatMoney(l.amount, q.currency)}`).join("\n"),
+      total: formatMoney(q.total, q.currency),
+      validUntil: formatDate(q.validUntil),
+    },
+  };
+}
+
+/** The template behind a reply that may be LLM-worded (quote, clarifying question); undefined for holding replies. */
+export function replyTemplate(outcome: Outcome, fields: ExtractedFields, rateCard?: unknown): ReplyTemplate | undefined {
+  if (outcome.kind === "quote") return quoteTemplate(outcome, fields);
+  if (outcome.reason === "missing_required_field") {
+    const q = clarifyingQuestion(outcome.ruleGap, rateCard);
+    if (q !== undefined) return { kind: "clarify", template: "Thank you for your enquiry! {{question}}", values: { question: q } };
+  }
+  return undefined;
 }
 
 /**
@@ -48,12 +72,10 @@ function renderQuote(q: Quote, f: ExtractedFields): string {
  * (or the typed fields it priced); there is no free-text number path.
  */
 export function renderReply(outcome: Outcome, fields: ExtractedFields, rateCard?: unknown): string {
-  if (outcome.kind === "quote") return renderQuote(outcome, fields);
-  if (outcome.reason === "missing_required_field") {
-    const q = clarifyingQuestion(outcome.ruleGap, rateCard);
-    if (q !== undefined) return `Thank you for your enquiry! ${q}`;
-  }
-  return holdingReply(outcome.reason);
+  const t = replyTemplate(outcome, fields, rateCard);
+  if (t) return fillTemplate(t.template, t.values);
+  if (outcome.kind === "refusal") return holdingReply(outcome.reason);
+  throw new Error("unreachable");
 }
 
 /**

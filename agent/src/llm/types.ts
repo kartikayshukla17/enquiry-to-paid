@@ -47,6 +47,8 @@ export class LlmError extends Error {
   constructor(
     public readonly code: LlmErrorCode,
     message: string,
+    /** Which provider/model/region the failed call was aimed at (the text may have reached it). */
+    public readonly attempt?: Pick<CallMeta, "modelId" | "provider" | "region">,
   ) {
     super(message);
     this.name = "LlmError";

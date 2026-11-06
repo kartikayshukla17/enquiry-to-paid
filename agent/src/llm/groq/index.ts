@@ -1,5 +1,5 @@
 import { EXTRACT_SYSTEM_PROMPT, WORD_SYSTEM_PROMPT, wrapCustomerText } from "../prompts.js";
-import { LlmError, type CallMeta, type ExtractInput, type ExtractResult, type LlmProvider, type WordReplyInput, type WordReplyResult } from "../types.js";
+import { LlmError, type LlmErrorCode, type CallMeta, type ExtractInput, type ExtractResult, type LlmProvider, type WordReplyInput, type WordReplyResult } from "../types.js";
 
 export const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 /** Current Groq production model at time of writing; override with GROQ_MODEL. */
@@ -30,6 +30,7 @@ export function createGroqProvider(opts: GroqOptions): LlmProvider {
   const region = opts.region ?? "us";
   const doFetch = opts.fetch ?? fetch;
   const timeoutMs = opts.timeoutMs ?? 15_000;
+  const fail = (code: LlmErrorCode, msg: string) => new LlmError(code, msg, { modelId: model, provider: "groq", region });
   const inRate = opts.inputPaisePerMTok ?? 5_300;
   const outRate = opts.outputPaisePerMTok ?? 7_100;
 
@@ -45,22 +46,22 @@ export function createGroqProvider(opts: GroqOptions): LlmProvider {
         signal: ctrl.signal,
       });
     } catch (e) {
-      if (e instanceof Error && e.name === "AbortError") throw new LlmError("timeout", `groq call exceeded ${timeoutMs}ms`);
-      throw new LlmError("http_error", "groq network failure");
+      if (e instanceof Error && e.name === "AbortError") throw fail("timeout", `groq call exceeded ${timeoutMs}ms`);
+      throw fail("http_error", "groq network failure");
     } finally {
       clearTimeout(timer);
     }
     // Error bodies can echo the request; never copy them into the error.
-    if (res.status === 429) throw new LlmError("rate_limited", "groq rate limited (429)");
-    if (!res.ok) throw new LlmError("http_error", `groq http ${res.status}`);
+    if (res.status === 429) throw fail("rate_limited", "groq rate limited (429)");
+    if (!res.ok) throw fail("http_error", `groq http ${res.status}`);
     let data: ChatResponse;
     try {
       data = (await res.json()) as ChatResponse;
     } catch {
-      throw new LlmError("malformed_response", "groq response was not JSON");
+      throw fail("malformed_response", "groq response was not JSON");
     }
     const content = data.choices?.[0]?.message?.content;
-    if (typeof content !== "string") throw new LlmError("malformed_response", "groq response had no message content");
+    if (typeof content !== "string") throw fail("malformed_response", "groq response had no message content");
     const inputTokens = num(data.usage?.prompt_tokens);
     const outputTokens = num(data.usage?.completion_tokens);
     const tokens = num(data.usage?.total_tokens) || inputTokens + outputTokens;
@@ -81,7 +82,7 @@ export function createGroqProvider(opts: GroqOptions): LlmProvider {
       try {
         fields = JSON.parse(content);
       } catch {
-        throw new LlmError("malformed_response", "model output was not valid JSON");
+        throw fail("malformed_response", "model output was not valid JSON");
       }
       return { ...meta, fields };
     },

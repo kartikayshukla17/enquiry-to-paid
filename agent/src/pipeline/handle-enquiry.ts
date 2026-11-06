@@ -3,7 +3,8 @@ import type { KernelBridge } from "../kernel/index.js";
 import { KernelError, type Availability, type ExtractedFields, type Outcome } from "../kernel/types.js";
 import type { Notifier } from "../escalation/index.js";
 import { appendEntry, type LedgerRow } from "../ledger/index.js";
-import { renderReply } from "./reply.js";
+import type { ReplyWorder } from "../llm/word-reply.js";
+import { holdingReply, renderReply, replyTemplate } from "./reply.js";
 import { encryptPii, phoneHash, piiKeysFromEnv, type PiiKeys } from "../security/pii.js";
 import { withTenant } from "../tenancy/with-tenant.js";
 
@@ -18,8 +19,10 @@ export interface EnquiryInput {
   message: string;
   /** This message's extracted fields; merged over the thread's earlier ones (later wins). */
   fields: Partial<ExtractedFields> & Record<string, unknown>;
-  /** Model/provider/region/cost of the LLM calls behind this outcome (T6 supplies real values). */
+  /** Model/provider/region/cost of the extraction call behind this message (fixture mode: none). */
   provenance?: Provenance;
+  /** Extraction failed (provider error or schema-invalid output): nothing to merge, never a quote. */
+  extractionFailure?: { code: string; detail: string };
 }
 
 export interface Provenance {
@@ -32,6 +35,15 @@ export interface Provenance {
 /** Fixture mode: no LLM was called, so the cost is honestly zero. */
 export const FIXTURE_PROVENANCE: Provenance = { modelId: "fixture", provider: "fixture", region: "local", costMinor: 0 };
 
+/** Below this the extraction is not acted on (basis points). Override per call, or with LOW_CONFIDENCE_BPS. */
+export const DEFAULT_LOW_CONFIDENCE_BPS = 7000;
+export function lowConfidenceThreshold(env: Record<string, string | undefined> = process.env): number {
+  const raw = env.LOW_CONFIDENCE_BPS;
+  if (raw === undefined || raw === "") return DEFAULT_LOW_CONFIDENCE_BPS;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n <= 10_000 ? n : DEFAULT_LOW_CONFIDENCE_BPS;
+}
+
 export interface EnquiryResult {
   reply: string;
   outcome: Outcome;
@@ -41,15 +53,16 @@ export interface EnquiryResult {
 }
 
 /**
- * T1 tracer: typed fields -> kernel -> reply (numbers from kernel) -> ledger.
+ * Typed fields -> kernel -> reply (numbers from kernel) -> ledger.
  * Free text (`message`) is stored in the ledger only; it never reaches the kernel.
  */
 export async function handleEnquiry(
-  deps: { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys },
+  deps: { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number },
   e: EnquiryInput,
 ): Promise<EnquiryResult> {
   const cardHash = deps.kernel.rateCardHash(e.rateCard);
   const pii = deps.pii ?? piiKeysFromEnv();
+  const threshold = deps.lowConfidenceBps ?? lowConfidenceThreshold();
   // Everything below runs as the unprivileged app role with app.tenant_id set (RLS applies).
   const { outcome, reply, ledgerRow, fields, clarifying } = await withTenant(deps.pool, e.tenant.id, async (client) => {
     await client.query("INSERT INTO tenants (id, name) VALUES ($1,$2) ON CONFLICT (id) DO NOTHING", [e.tenant.id, e.tenant.name]);
@@ -64,21 +77,9 @@ export async function handleEnquiry(
     );
     // Lock the thread row so concurrent messages merge in order; later fields override earlier ones.
     const stored = (await client.query<{ fields: Record<string, unknown> }>("SELECT fields FROM threads WHERE id = $1 FOR UPDATE", [e.threadId])).rows[0];
-    const merged = { ...(stored?.fields ?? {}), ...e.fields } as Record<string, unknown>;
-    if (typeof merged.language !== "string" || typeof merged.confidenceBps !== "number") {
-      throw new Error("extraction must carry language and confidenceBps");
-    }
-    const fields = merged as unknown as ExtractedFields;
-    const raw = deps.kernel.evaluate({
-      rateCard: e.rateCard,
-      fields,
-      availability: e.availability,
-      now: e.now,
-    }) as Outcome | { ok: false; error: string };
-    if (!("kind" in raw)) throw new KernelError(raw.error);
-    const outcome: Outcome = raw;
-    const clarifying = outcome.kind === "refusal" && outcome.reason === "missing_required_field";
-    const reply = renderReply(outcome, fields, e.rateCard);
+    const failure = e.extractionFailure;
+    const lowConf = !failure && typeof e.fields.confidenceBps === "number" && e.fields.confidenceBps < threshold;
+    const gated = failure !== undefined || lowConf;
     const cardId = (e.rateCard as { id: string }).id;
     await client.query(
       `INSERT INTO rate_cards (id, tenant_id, card_id, version, content_hash, compiled)
@@ -86,18 +87,71 @@ export async function handleEnquiry(
       [`${e.tenant.id}:${cardId}:${e.rateCardVersion}`, e.tenant.id, cardId, e.rateCardVersion, cardHash, JSON.stringify(e.rateCard)],
     );
     const base = { tenantId: e.tenant.id, threadId: e.threadId, at: e.now };
-    await appendEntry(client, deps.kernel, { ...base, type: "enquiry", payload: { text: e.message } });
-    await appendEntry(client, deps.kernel, { ...base, type: "extraction", payload: { fields: e.fields, merged: fields } });
+    // Which provider/region saw the customer text is recorded on the enquiry row (cost sits on the call's own row).
+    const seenBy = e.provenance ? { ...e.provenance, costMinor: 0 } : {};
+    await appendEntry(client, deps.kernel, { ...base, type: "enquiry", payload: { text: e.message }, ...seenBy });
+
+    let fields: ExtractedFields;
+    let outcome: Outcome;
+    let reply: string;
+    let clarifying = false;
+    let wording: Provenance | undefined;
+    if (gated) {
+      // Gate: this read is untrusted. Nothing merges into the thread, the kernel is not consulted, no quote is possible.
+      fields = (stored?.fields as unknown as ExtractedFields | undefined) ?? { language: "unknown", confidenceBps: 0 };
+      outcome = { kind: "refusal", reason: "low_confidence", ...(failure && { ruleGap: `extraction_${failure.code}` }) };
+      reply = holdingReply("low_confidence");
+      await appendEntry(client, deps.kernel, {
+        ...base,
+        type: "extraction",
+        payload: failure
+          ? { status: "rejected", failure: failure.code, detail: failure.detail }
+          : { status: "low_confidence", thresholdBps: threshold, fields: e.fields },
+        ...(e.provenance ?? FIXTURE_PROVENANCE),
+      });
+    } else {
+      const merged = { ...(stored?.fields ?? {}), ...e.fields } as Record<string, unknown>;
+      if (typeof merged.language !== "string" || typeof merged.confidenceBps !== "number") {
+        throw new Error("extraction must carry language and confidenceBps");
+      }
+      fields = merged as unknown as ExtractedFields;
+      const raw = deps.kernel.evaluate({
+        rateCard: e.rateCard,
+        fields,
+        availability: e.availability,
+        now: e.now,
+      }) as Outcome | { ok: false; error: string };
+      if (!("kind" in raw)) throw new KernelError(raw.error);
+      outcome = raw;
+      clarifying = outcome.kind === "refusal" && outcome.reason === "missing_required_field";
+      reply = renderReply(outcome, fields, e.rateCard);
+      const t = deps.worder ? replyTemplate(outcome, fields, e.rateCard) : undefined;
+      if (deps.worder && t) {
+        const w = await deps.worder(t.kind, t.template, t.values);
+        reply = w.reply;
+        wording = w.provenance;
+      }
+      await appendEntry(client, deps.kernel, {
+        ...base,
+        type: "extraction",
+        payload: { fields: e.fields, merged: fields },
+        ...(e.provenance ?? {}),
+      });
+    }
+    // Per-call cost: the extraction row carries the extraction call's cost, this row the wording call's (0 when none),
+    // so SUM(cost_minor) over a thread is the thread's LLM spend.
+    const outcomeProv: Provenance = wording ?? (e.provenance ? { ...e.provenance, costMinor: 0 } : FIXTURE_PROVENANCE);
     const ledgerRow = await appendEntry(client, deps.kernel, {
       ...base,
       type: outcome.kind,
       payload: outcome,
       rateCardHash: cardHash,
-      ...(e.provenance ?? FIXTURE_PROVENANCE),
+      ...outcomeProv,
     });
-    // A clarifying question keeps the thread open; the follow-up message completes it.
+    // A clarifying question keeps the thread open; the follow-up message completes it. A gated read leaves stored fields alone.
     const state = outcome.kind === "quote" ? "quoted" : clarifying ? "open" : "refused";
-    await client.query("UPDATE threads SET state = $2, fields = $3::jsonb WHERE id = $1", [e.threadId, state, JSON.stringify(fields)]);
+    if (gated) await client.query("UPDATE threads SET state = $2 WHERE id = $1", [e.threadId, state]);
+    else await client.query("UPDATE threads SET state = $2, fields = $3::jsonb WHERE id = $1", [e.threadId, state, JSON.stringify(fields)]);
     return { outcome, reply, ledgerRow, fields, clarifying };
   });
   // After commit: the refusal is durable before anyone is told about it.
