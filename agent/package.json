@@ -11,6 +11,8 @@
     "ledger": "tsx src/ledger/cli.ts"
   },
   "dependencies": {
+    "better-auth": "^1.7.18",
+    "drizzle-orm": "^0.45.4",
     "pg": "^8.23.1"
   },
   "devDependencies": {

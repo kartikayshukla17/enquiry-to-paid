@@ -24,3 +24,30 @@ Reasons: `hash_mismatch` (row edited), `prev_hash_mismatch` (a row before it was
 `seq_gap` (a row was removed), `tail_truncated` (last rows removed; caught by `ledger_heads`).
 Use `pnpm ledger verify --tenant <id>` for one tenant. Corrections are new `correction` rows whose
 `corrects` points at the original `seq` (`appendCorrection`).
+
+## Tenant isolation, PII and org roles (T5)
+
+Needs the same local Postgres. Throwaway keys are fine for a demo; real keys come from the environment only.
+
+```sh
+pnpm sim two-tenants fixtures/two-tenants.json   # same enquiry under two tenants/cards; cross-tenant reads blocked
+pnpm ledger verify                               # still works (owner connection, see below)
+```
+
+- Every tenant table (`tenants, customers, threads, rate_cards, ledger_entries, ledger_heads, members, resources`) has RLS
+  enabled **and forced** with `tenant_id = current_setting('app.tenant_id', true)`; unset means no rows (fail closed).
+  A test enumerates every table in `public`, so a new table without RLS fails the build.
+- `withTenant(pool, tenantId, fn)` (`src/tenancy/with-tenant.ts`) = `BEGIN; SET LOCAL ROLE e2p_app; set_config('app.tenant_id', ..., true)`.
+  The pipeline (`handleEnquiry`, `runFixture`, `runTwoTenants`) only ever runs through it. `e2p_app` is NOLOGIN, not superuser, not BYPASSRLS;
+  production grants it to a login role (or `ALTER ROLE e2p_app LOGIN PASSWORD ...` from a secret). The ledger is INSERT/SELECT only for it.
+- **Owner connection (documented choice):** `pnpm ledger verify`, `migrate`, and Better Auth connect as the owner role from `DATABASE_URL`.
+  Verify is a read-only audit across all tenants (it must see every chain), and Better Auth must query its tables before a tenant is known.
+  FORCE RLS applies to a non-superuser owner too, so in production the verify role needs BYPASSRLS (or a SELECT-only audit policy).
+- PII: `PII_ENC_KEY` (AES-256-GCM) and `PHONE_HASH_KEY` (HMAC-SHA256 lookup hash), each 32 random bytes base64
+  (`openssl rand -base64 32`). Tests generate random keys; `pnpm sim` generates process-local ones if unset. Raw phones are never logged.
+- Auth: `src/auth/` is Better Auth + organization plugin on Drizzle. `BETTER_AUTH_SECRET` from env only. organization.id **is** the tenant id;
+  organization members mirror into `members` with roles `owner | manager | staff`.
+- Supabase: see `docs/supabase-lockdown.md` (Data API off; `anon`/`authenticated` hold nothing).
+
+Ruling: Better Auth's tables (`user, session, account, verification, organization, member, invitation`) are excluded from RLS with a reason (the
+library queries them before a tenant is known); `e2p_app`, `anon`, `authenticated` have no privileges on them, and all tenant-scoped app tables stay RLS-protected.

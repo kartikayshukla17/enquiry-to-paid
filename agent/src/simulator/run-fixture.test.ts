@@ -5,6 +5,7 @@ import { REFUSAL_REASONS } from "../kernel/types.js";
 import { collectingNotifier, createLogNotifier, describeReason, type EscalationEvent } from "../escalation/index.js";
 import { holdingReply } from "../pipeline/reply.js";
 import { runFixture } from "./run-fixture.js";
+import { TENANT_EXEMPT } from "../tenancy/exempt.js";
 
 const FIXTURE = "fixtures/banquet-01.json";
 let db: TestDb;
@@ -179,7 +180,7 @@ describe("migrations", () => {
                        AND c.column_name = 'tenant_id' AND c.is_nullable = 'NO') AS has
       FROM information_schema.tables t
       WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
-        AND t.table_name <> 'schema_migrations'`);
+        AND t.table_name <> ALL ($1)`, [Object.keys(TENANT_EXEMPT)]);
     expect(rows.length).toBeGreaterThanOrEqual(5);
     expect(rows.filter((r) => !r.has).map((r) => r.table_name)).toEqual([]);
   });

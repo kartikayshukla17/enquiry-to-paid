@@ -33,6 +33,11 @@ jobs:
         with:
           workspaces: kernel
       - run: pnpm install --frozen-lockfile
+      - name: Throwaway test keys (generated per run, never stored)
+        run: |
+          echo "PII_ENC_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+          echo "PHONE_HASH_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+          echo "BETTER_AUTH_SECRET=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
       - name: Lint (site + agent typecheck)
         run: pnpm lint
       - name: Tests (kernel build, agent, cargo)
@@ -43,4 +48,5 @@ jobs:
         run: |
           pnpm sim run fixtures/banquet-01.json
           pnpm sim run fixtures/wedding-300-out-of-season.json
+          pnpm sim two-tenants fixtures/two-tenants.json
           pnpm ledger verify

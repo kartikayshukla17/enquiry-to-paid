@@ -2,18 +2,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDb, type TestDb } from "../ledger/test-db.js";
+import { TENANT_EXEMPT } from "./exempt.js";
 import { withTenant } from "./with-tenant.js";
 
 let db: TestDb;
 const A = "tenant-a";
 const B = "tenant-b";
 
-/** Tables that are deliberately NOT tenant-scoped. Every entry needs a reason. */
-const EXEMPT: Record<string, string> = {
-  schema_migrations: "migration bookkeeping, no tenant data; the app role has no grant on it",
-};
-/** Better Auth's own tables (added in a later migration); see the Ruling in agent/README.md. */
-const AUTH_TABLES = ["user", "session", "account", "verification", "organization", "member", "invitation"];
 
 beforeAll(async () => {
   db = await createTestDb();
@@ -51,7 +46,7 @@ describe("row-level security", () => {
        JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE n.nspname = 'public' AND c.relkind IN ('r','p')`,
     );
-    const skip = new Set([...Object.keys(EXEMPT), ...AUTH_TABLES]);
+    const skip = new Set(Object.keys(TENANT_EXEMPT));
     const unprotected = rows.filter((r) => !skip.has(r.relname) && !(r.relrowsecurity && r.relforcerowsecurity)).map((r) => r.relname);
     expect(unprotected).toEqual([]);
     for (const t of SCOPED) expect(rows.map((r) => r.relname)).toContain(t);
