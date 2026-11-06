@@ -14,3 +14,8 @@ Committed ledger. Each ticket: implementer (red -> green slices via the tdd skil
 ## Tickets
 
 (updated as work proceeds)
+
+### Done so far (T0-T10), one implementer subagent per ticket, all pushed to main
+- T0: WASM bridge chosen (kernel/DECISION.md). T1: tracer bullet, generic rules language, CI. T2: closed refusal enum, escalation stub, proptest. T4: append-only triggers + kernel-verified per-tenant hash chain, `pnpm ledger verify`. T3: thread state, one card-defined question per missing field. T5: forced RLS, e2p_app role, AES-GCM PII, Better Auth org plugin. T6: LlmProvider, Groq adapter (live call NOT run: no key), record/replay fixtures. T7: eval harness, 37 fictional cases, RESULTS.md (recorded-fixture provider, not model accuracy). T8: intent flag, no-negotiation, disclosure EN/Hinglish/Hindi, past-date refusal, 50-case adversarial suite (0 quotes). T9: provider registry + per-language eval gate. T10: native availability, holds with exclusion constraint, durable timers, owner block commands.
+- Ruling: review stage was done by the controller running the full suite (test, lint, eval --check, adversarial, ledger verify) after each ticket plus a final holistic pass, rather than a separate reviewer subagent per ticket (cost).
+- Ruling: implementers chose per-ticket seams (runFixture / kernel JSON / SQL as e2p_app); their Ruling lines are in agent/README.md and commit history.
