@@ -1,0 +1,15 @@
+{
+  "id": "photographer-01-quote",
+  "comment": "FICTIONAL one-message enquiry for the fictional photographer card. Standard package, hours within the included amount, venue within the free travel band. customerRef is a made-up label, not a phone number.",
+  "tenant": { "id": "tenant-lensfolk", "name": "FICTIONAL: Lensfolk Studio" },
+  "rateCard": "rate-cards/fictional-photographer.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-101",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "Hi, we need a wedding shoot on 9 December 2026, the Standard package, 6 hours, venue is about 10 km from you.",
+      "extracted": { "service": "wedding-shoot", "date": "2026-12-09", "package": "standard", "hours": 6, "distanceKm": 10, "language": "en", "confidenceBps": 9100 }
+    }
+  ]
+}

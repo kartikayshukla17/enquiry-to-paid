@@ -1,0 +1,15 @@
+{
+  "id": "photographer-04-out-of-coverage",
+  "comment": "FICTIONAL. The venue is 85 km away, outside the card's 60 km coverage: no covering rule, so a typed refusal and an escalation, never a number. customerRef is a made-up label, not a phone number.",
+  "tenant": { "id": "tenant-lensfolk", "name": "FICTIONAL: Lensfolk Studio" },
+  "rateCard": "rate-cards/fictional-photographer.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-104",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "Wedding shoot on 9 December 2026, Basic package, 4 hours, but the venue is 85 km from you.",
+      "extracted": { "service": "wedding-shoot", "date": "2026-12-09", "package": "basic", "hours": 4, "distanceKm": 85, "language": "en", "confidenceBps": 9000 }
+    }
+  ]
+}

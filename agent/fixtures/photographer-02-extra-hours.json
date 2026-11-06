@@ -1,0 +1,15 @@
+{
+  "id": "photographer-02-extra-hours",
+  "comment": "FICTIONAL. Premium package with 10 hours (8 included, so 2 extra), a venue 45 km away (second travel band) on a Saturday (weekend surcharge). customerRef is a made-up label, not a phone number.",
+  "tenant": { "id": "tenant-lensfolk", "name": "FICTIONAL: Lensfolk Studio" },
+  "rateCard": "rate-cards/fictional-photographer.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-102",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "Wedding shoot on 12 December 2026, Premium package please, we want coverage for 10 hours and the venue is 45 km away.",
+      "extracted": { "service": "wedding-shoot", "date": "2026-12-12", "package": "premium", "hours": 10, "distanceKm": 45, "language": "en", "confidenceBps": 9000 }
+    }
+  ]
+}

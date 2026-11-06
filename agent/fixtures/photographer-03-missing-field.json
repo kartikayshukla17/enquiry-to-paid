@@ -1,0 +1,15 @@
+{
+  "id": "photographer-03-missing-field",
+  "comment": "FICTIONAL. The customer never says which package; the agent asks the card's own question and the thread stays open. customerRef is a made-up label, not a phone number.",
+  "tenant": { "id": "tenant-lensfolk", "name": "FICTIONAL: Lensfolk Studio" },
+  "rateCard": "rate-cards/fictional-photographer.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-103",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "Need a photographer for an event on 9 December 2026, 5 hours, about 12 km from you.",
+      "extracted": { "service": "event-shoot", "date": "2026-12-09", "hours": 5, "distanceKm": 12, "language": "en", "confidenceBps": 9000 }
+    }
+  ]
+}
