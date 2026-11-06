@@ -1,19 +1,133 @@
-use kernel::evaluate;
+use kernel::{evaluate, rate_card_hash};
+use serde_json::{json, Value};
 
-#[test]
-fn sums_lines_in_integer_minor_units() {
-    let out = evaluate(r#"{"lines":[{"unitMinor":150000,"qty":3},{"unitMinor":2500,"qty":2}]}"#);
-    assert_eq!(out, r#"{"ok":true,"totalMinor":455000}"#);
+const CARD: &str = include_str!("../../rate-cards/fictional-banquet.json");
+
+fn run(fields: Value, availability: Value) -> Value {
+    let card: Value = serde_json::from_str(CARD).unwrap();
+    let input = json!({
+        "rateCard": card,
+        "fields": fields,
+        "availability": availability,
+        "now": "2026-11-07T10:00:00Z"
+    });
+    serde_json::from_str(&evaluate(&input.to_string())).unwrap()
+}
+
+fn saturday_120() -> Value {
+    json!({"service":"banquet","date":"2026-12-12","guestCount":120,"language":"en","confidenceBps":9200})
+}
+
+fn no_blocks() -> Value {
+    json!({"blockedDates": []})
 }
 
 #[test]
-fn malformed_input_returns_typed_error_not_panic() {
-    let out = evaluate("not json");
-    assert_eq!(out, r#"{"ok":false,"error":"invalid_input"}"#);
+fn prices_weekend_banquet_with_tax_as_its_own_line() {
+    let out = run(saturday_120(), no_blocks());
+    assert_eq!(out["kind"], "quote");
+    let lines: Vec<(String, i64)> = out["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| (l["ruleId"].as_str().unwrap().to_string(), l["amount"].as_i64().unwrap()))
+        .collect();
+    assert_eq!(
+        lines,
+        vec![
+            ("hall-weekend".to_string(), 25_000_000),
+            ("catering-per-plate".to_string(), 15_000_000),
+            ("decor-by-size".to_string(), 6_000_000),
+            ("peak-season".to_string(), 2_000_000),
+            ("gst-18".to_string(), 8_640_000),
+        ]
+    );
+    assert_eq!(out["total"], 56_640_000);
+    assert_eq!(out["currency"], "INR");
+    assert_eq!(out["validUntil"], "2026-11-14T10:00:00Z");
 }
 
 #[test]
-fn overflow_returns_typed_error() {
-    let out = evaluate(r#"{"lines":[{"unitMinor":9223372036854775807,"qty":2}]}"#);
-    assert_eq!(out, r#"{"ok":false,"error":"overflow"}"#);
+fn weekday_outside_peak_uses_weekday_hall_and_no_surcharge() {
+    // 2026-06-03 is a Wednesday; 40 guests -> decor tier 1
+    let out = run(
+        json!({"service":"banquet","date":"2026-06-03","guestCount":40,"language":"en","confidenceBps":9000}),
+        no_blocks(),
+    );
+    let ids: Vec<&str> = out["lines"].as_array().unwrap().iter().map(|l| l["ruleId"].as_str().unwrap()).collect();
+    assert_eq!(ids, vec!["hall-weekday", "catering-per-plate", "decor-by-size", "gst-18"]);
+    // 15_000_000 + 5_000_000 + 4_000_000 = 24_000_000; gst 4_320_000
+    assert_eq!(out["total"], 28_320_000);
+}
+
+#[test]
+fn tax_rounds_half_up_in_integer_arithmetic() {
+    let mut card: Value = serde_json::from_str(CARD).unwrap();
+    // subtotal 1 minor unit at 50% = 0.5 -> rounds half up to 1
+    card["rules"] = json!([{"ruleId":"r","core":true,"label":"R","when":[],"charge":{"kind":"flat","amount":1}}]);
+    card["taxLines"] = json!([{"ruleId":"t","label":"T","rateBps":5000}]);
+    let input = json!({"rateCard":card,"fields":saturday_120(),"availability":no_blocks(),"now":"2026-11-07T10:00:00Z"});
+    let out: Value = serde_json::from_str(&evaluate(&input.to_string())).unwrap();
+    assert_eq!(out["lines"][1]["amount"], 1);
+    assert_eq!(out["total"], 2);
+}
+
+#[test]
+fn no_matching_rule_is_a_typed_refusal() {
+    let out = run(
+        json!({"service":"banquet","date":"2026-12-12","guestCount":900,"language":"en","confidenceBps":9000}),
+        no_blocks(),
+    );
+    assert_eq!(out, json!({"kind":"refusal","reason":"no_covering_rule"}));
+}
+
+#[test]
+fn identical_input_gives_byte_identical_output() {
+    let card: Value = serde_json::from_str(CARD).unwrap();
+    let input = json!({"rateCard":card,"fields":saturday_120(),"availability":no_blocks(),"now":"2026-11-07T10:00:00Z"}).to_string();
+    let first = evaluate(&input);
+    for _ in 0..100 {
+        assert_eq!(evaluate(&input), first);
+    }
+}
+
+#[test]
+fn quote_pins_the_card_hash_and_hash_ignores_key_order() {
+    let out = run(saturday_120(), no_blocks());
+    let card: Value = serde_json::from_str(CARD).unwrap();
+    let h = rate_card_hash(&card.to_string()).unwrap();
+    assert_eq!(out["rateCardHash"], h);
+    assert_eq!(h.len(), 64);
+    let reordered = r#"{"version":1,"id":"x","a":{"z":1,"b":2}}"#;
+    let reordered2 = r#"{"a":{"b":2,"z":1},"id":"x","version":1}"#;
+    assert_eq!(rate_card_hash(reordered).unwrap(), rate_card_hash(reordered2).unwrap());
+}
+
+#[test]
+fn missing_required_field_is_refused_not_guessed() {
+    let out = run(json!({"service":"banquet","language":"en","confidenceBps":9000}), no_blocks());
+    assert_eq!(out["kind"], "refusal");
+    assert_eq!(out["reason"], "missing_required_field");
+}
+
+#[test]
+fn blocked_date_is_refused() {
+    let out = run(saturday_120(), json!({"blockedDates":["2026-12-12"]}));
+    assert_eq!(out["reason"], "date_unavailable");
+}
+
+#[test]
+fn floats_and_malformed_input_are_typed_errors() {
+    assert_eq!(evaluate("not json"), r#"{"ok":false,"error":"invalid_input"}"#);
+    let card: Value = serde_json::from_str(CARD).unwrap();
+    let input = json!({"rateCard":card,"fields":{"guestCount":1.5},"availability":no_blocks(),"now":"2026-11-07T10:00:00Z"});
+    assert_eq!(evaluate(&input.to_string()), r#"{"ok":false,"error":"invalid_input"}"#);
+}
+
+#[test]
+fn overflow_is_a_typed_error() {
+    let mut card: Value = serde_json::from_str(CARD).unwrap();
+    card["rules"] = json!([{"ruleId":"r","core":true,"label":"R","when":[],"charge":{"kind":"per_unit","field":"guestCount","unitAmount":9223372036854775807i64}}]);
+    let input = json!({"rateCard":card,"fields":saturday_120(),"availability":no_blocks(),"now":"2026-11-07T10:00:00Z"});
+    assert_eq!(evaluate(&input.to_string()), r#"{"ok":false,"error":"overflow"}"#);
 }

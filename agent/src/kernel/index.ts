@@ -11,12 +11,15 @@ interface KernelExports {
   alloc(len: number): number;
   dealloc(ptr: number, len: number): void;
   evaluate_json(ptr: number, len: number): number;
+  rate_card_hash_json(ptr: number, len: number): number;
   result_len(): number;
 }
 
 export interface KernelBridge {
   /** JSON in, JSON out. Errors from the kernel are returned as typed values. */
   evaluate(input: unknown): unknown;
+  /** SHA-256 hex of the canonical card JSON, computed in Rust. */
+  rateCardHash(card: unknown): string;
 }
 
 export async function loadKernel(wasmPath: string = DEFAULT_WASM): Promise<KernelBridge> {
@@ -29,11 +32,11 @@ export async function loadKernel(wasmPath: string = DEFAULT_WASM): Promise<Kerne
   const instance = new WebAssembly.Instance(new WebAssembly.Module(new Uint8Array(bytes)), {});
   const k = instance.exports as unknown as KernelExports;
 
-  const call = (json: string): string => {
+  const call = (fn: (ptr: number, len: number) => number, json: string): string => {
     const input = new TextEncoder().encode(json);
     const inPtr = k.alloc(input.length);
     new Uint8Array(k.memory.buffer, inPtr, input.length).set(input);
-    const outPtr = k.evaluate_json(inPtr, input.length);
+    const outPtr = fn(inPtr, input.length);
     const outLen = k.result_len();
     const out = new TextDecoder().decode(
       new Uint8Array(k.memory.buffer, outPtr, outLen).slice(),
@@ -43,5 +46,9 @@ export async function loadKernel(wasmPath: string = DEFAULT_WASM): Promise<Kerne
     return out;
   };
 
-  return { evaluate: (input) => JSON.parse(call(JSON.stringify(input))) as unknown };
+  return {
+    evaluate: (input) =>
+      JSON.parse(call((p, l) => k.evaluate_json(p, l), JSON.stringify(input))) as unknown,
+    rateCardHash: (card) => call((p, l) => k.rate_card_hash_json(p, l), JSON.stringify(card)),
+  };
 }

@@ -1,0 +1,78 @@
+{
+  "comment": "FICTIONAL example rate card for tests and demos. Not a real venue or real prices.",
+  "currency": "INR",
+  "fictional": true,
+  "holdHours": 48,
+  "id": "fictional-banquet",
+  "label": "FICTIONAL: Rose Court Banquets sample rate card",
+  "requiredFields": [
+    { "field": "service", "question": "What kind of event is it?" },
+    { "field": "date", "question": "Which date do you have in mind?" },
+    { "field": "guestCount", "question": "Roughly how many guests?" }
+  ],
+  "rules": [
+    {
+      "ruleId": "hall-weekday",
+      "core": true,
+      "label": "Hall hire (Mon-Thu)",
+      "when": [
+        { "field": "service", "op": "eq", "value": "banquet" },
+        { "field": "date", "op": "weekday_in", "days": ["mon", "tue", "wed", "thu"] },
+        { "field": "guestCount", "op": "range", "min": 20, "max": 300 }
+      ],
+      "charge": { "kind": "flat", "amount": 15000000 }
+    },
+    {
+      "ruleId": "hall-weekend",
+      "core": true,
+      "label": "Hall hire (Fri-Sun)",
+      "when": [
+        { "field": "service", "op": "eq", "value": "banquet" },
+        { "field": "date", "op": "weekday_in", "days": ["fri", "sat", "sun"] },
+        { "field": "guestCount", "op": "range", "min": 20, "max": 300 }
+      ],
+      "charge": { "kind": "flat", "amount": 25000000 }
+    },
+    {
+      "ruleId": "catering-per-plate",
+      "core": true,
+      "label": "Catering per plate",
+      "when": [
+        { "field": "service", "op": "eq", "value": "banquet" },
+        { "field": "guestCount", "op": "range", "min": 20, "max": 300 }
+      ],
+      "charge": { "kind": "per_unit", "field": "guestCount", "unitAmount": 125000 }
+    },
+    {
+      "ruleId": "decor-by-size",
+      "core": true,
+      "label": "Standard decor",
+      "when": [
+        { "field": "service", "op": "eq", "value": "banquet" },
+        { "field": "guestCount", "op": "range", "min": 20, "max": 300 }
+      ],
+      "charge": {
+        "kind": "tiered",
+        "field": "guestCount",
+        "tiers": [
+          { "upTo": 100, "amount": 4000000 },
+          { "upTo": 200, "amount": 6000000 },
+          { "upTo": null, "amount": 9000000 }
+        ]
+      }
+    },
+    {
+      "ruleId": "peak-season",
+      "label": "Peak season surcharge",
+      "when": [
+        { "field": "service", "op": "eq", "value": "banquet" },
+        { "field": "date", "op": "month_in", "months": [11, 12, 1, 2] }
+      ],
+      "charge": { "kind": "flat", "amount": 2000000 }
+    }
+  ],
+  "taxLines": [{ "ruleId": "gst-18", "label": "GST 18%", "rateBps": 1800 }],
+  "timezone": "Asia/Kolkata",
+  "validDays": 7,
+  "version": 1
+}

@@ -1,41 +1,45 @@
 //! Money kernel. Pure functions, JSON in / JSON out, integer minor units only.
-//! No clocks, no I/O, no free text.
+//! No clocks, no I/O, no free text, no floats.
 
-use serde::Deserialize;
+mod card;
+mod date;
+mod eval;
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Line {
-    unit_minor: i64,
-    qty: i64,
-}
-
-#[derive(Deserialize)]
-struct Input {
-    lines: Vec<Line>,
-}
+use sha2::{Digest, Sha256};
 
 fn err(code: &str) -> String {
     format!(r#"{{"ok":false,"error":"{code}"}}"#)
 }
 
-/// Trivial spike evaluator: totals `lines` in integer minor units.
+/// SHA-256 (lowercase hex) of the canonical card JSON: keys sorted, compact.
+/// `serde_json::Value` objects are BTreeMaps here, so serialisation is canonical.
+pub fn rate_card_hash(card_json: &str) -> Result<String, String> {
+    let v: serde_json::Value = serde_json::from_str(card_json).map_err(|_| err("invalid_input"))?;
+    let canonical = serde_json::to_string(&v).map_err(|_| err("invalid_input"))?;
+    let digest = Sha256::digest(canonical.as_bytes());
+    Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// `{rateCard, fields, availability, now}` -> `{kind:"quote"|"refusal",...}`.
 /// Never panics; failures are typed `{ok:false,error}` values.
 pub fn evaluate(input: &str) -> String {
-    let Ok(parsed) = serde_json::from_str::<Input>(input) else {
+    let Ok(raw) = serde_json::from_str::<serde_json::Value>(input) else {
         return err("invalid_input");
     };
-    let mut total: i64 = 0;
-    for l in &parsed.lines {
-        let Some(line) = l.unit_minor.checked_mul(l.qty) else {
-            return err("overflow");
-        };
-        let Some(next) = total.checked_add(line) else {
-            return err("overflow");
-        };
-        total = next;
+    let Some(card_value) = raw.get("rateCard") else {
+        return err("invalid_input");
+    };
+    let Ok(hash) = rate_card_hash(&card_value.to_string()) else {
+        return err("invalid_input");
+    };
+    let Ok(parsed) = serde_json::from_value::<eval::Input>(raw) else {
+        return err("invalid_input");
+    };
+    match eval::evaluate(parsed, hash) {
+        Ok(outcome) => serde_json::to_string(&outcome).unwrap_or_else(|_| err("invalid_input")),
+        Err(eval::KernelError::Overflow) => err("overflow"),
+        Err(eval::KernelError::Invalid) => err("invalid_input"),
     }
-    format!(r#"{{"ok":true,"totalMinor":{total}}}"#)
 }
 
 // ---- WASM ABI: (ptr,len) UTF-8 JSON protocol -------------------------------
@@ -66,9 +70,20 @@ pub unsafe extern "C" fn dealloc(ptr: *mut u8, len: usize) {
 /// `ptr..ptr+len` must be a valid buffer previously obtained from `alloc`.
 #[no_mangle]
 pub unsafe extern "C" fn evaluate_json(ptr: *const u8, len: usize) -> *mut u8 {
+    export(ptr, len, evaluate)
+}
+
+/// # Safety
+/// Same contract as `evaluate_json`. Returns the hash hex, or a typed error JSON.
+#[no_mangle]
+pub unsafe extern "C" fn rate_card_hash_json(ptr: *const u8, len: usize) -> *mut u8 {
+    export(ptr, len, |s| rate_card_hash(s).unwrap_or_else(|e| e))
+}
+
+unsafe fn export(ptr: *const u8, len: usize, f: impl Fn(&str) -> String) -> *mut u8 {
     let bytes = std::slice::from_raw_parts(ptr, len);
     let out = match std::str::from_utf8(bytes) {
-        Ok(s) => evaluate(s),
+        Ok(s) => f(s),
         Err(_) => err("invalid_input"),
     };
     let mut boxed = out.into_bytes();
