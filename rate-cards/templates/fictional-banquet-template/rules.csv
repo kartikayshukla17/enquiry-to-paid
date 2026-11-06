@@ -1,0 +1,6 @@
+rule_id,label,core,charge,price,per_field,included
+hall-weekday,Hall hire (Mon-Thu),yes,flat,150000,,
+hall-weekend,Hall hire (Fri-Sun),yes,flat,250000,,
+catering-per-plate,Catering per plate,yes,per_unit,1250,guestCount,
+decor-by-size,Standard decor,yes,tiered,,guestCount,
+peak-season,Peak season surcharge,no,flat,20000,,

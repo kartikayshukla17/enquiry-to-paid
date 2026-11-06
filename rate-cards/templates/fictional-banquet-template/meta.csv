@@ -1,0 +1,10 @@
+key,value
+id,fictional-banquet
+label,FICTIONAL: Rose Court Banquets sample rate card
+comment,FICTIONAL example rate card for tests and demos. Not a real venue or real prices.
+fictional,yes
+currency,INR
+timezone,Asia/Kolkata
+version,1
+valid_days,7
+hold_hours,48

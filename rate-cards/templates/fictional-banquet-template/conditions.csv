@@ -1,0 +1,13 @@
+rule_id,field,condition,value,to
+hall-weekday,service,is,banquet,
+hall-weekday,date,weekday_in,mon|tue|wed|thu,
+hall-weekday,guestCount,between,20,300
+hall-weekend,service,is,banquet,
+hall-weekend,date,weekday_in,fri|sat|sun,
+hall-weekend,guestCount,between,20,300
+catering-per-plate,service,is,banquet,
+catering-per-plate,guestCount,between,20,300
+decor-by-size,service,is,banquet,
+decor-by-size,guestCount,between,20,300
+peak-season,service,is,banquet,
+peak-season,date,month_in,11|12|1|2,
