@@ -1,0 +1,43 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: e2p
+        ports: ["54329:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      # Throwaway CI service container; not a secret.
+      DATABASE_URL: postgres://postgres:postgres@localhost:54329/e2p
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: kernel
+      - run: pnpm install --frozen-lockfile
+      - name: Lint (site + agent typecheck)
+        run: pnpm lint
+      - name: Tests (kernel build, agent, cargo)
+        run: pnpm test
+      - name: Offline eval
+        run: pnpm run eval
+      - name: Ledger verify
+        run: pnpm ledger verify
