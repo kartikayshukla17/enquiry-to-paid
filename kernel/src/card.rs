@@ -83,7 +83,35 @@ pub enum Charge {
         #[serde(default)]
         included: i64,
     },
+    /// A flat amount picked by the band `field` falls in (`up_to` inclusive).
     Tiered { field: String, tiers: Vec<Tier> },
+    /// All-units pricing: the band `field` falls in (`up_to` inclusive) picks the unit price for the WHOLE quantity,
+    /// so the charge is `tier.amount * value`.
+    TieredPerUnit { field: String, tiers: Vec<Tier> },
+}
+
+/// What happens when a typed field is under a card's floor (e.g. a minimum order quantity).
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum BelowMinimum {
+    /// Refuse (`out_of_policy`): the owner decides.
+    Refuse,
+    /// Quote at the minimum instead, and say so in the quote's `adjustments`.
+    RaiseToMin,
+}
+
+/// A floor on an integer field, with the card's own policy for what to do below it.
+/// Applies only when every condition in `when` holds (none = always).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Minimum {
+    pub rule_id: String,
+    pub label: String,
+    pub field: String,
+    pub min: i64,
+    pub below: BelowMinimum,
+    #[serde(default)]
+    pub when: Vec<Cond>,
 }
 
 #[derive(Deserialize)]
@@ -117,6 +145,8 @@ pub struct RateCard {
     #[serde(default)]
     pub offer_alternatives: Option<bool>,
     pub required_fields: Vec<RequiredField>,
+    #[serde(default)]
+    pub minimums: Vec<Minimum>,
     pub tax_lines: Vec<TaxLine>,
     pub rules: Vec<Rule>,
     // Provenance labels, ignored by pricing but part of the hashed card.

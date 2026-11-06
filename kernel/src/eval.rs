@@ -74,6 +74,17 @@ fn rule_gap(card: &RateCard, f: &Fields) -> Option<String> {
     best.map(|(_, set)| set.into_iter().collect::<Vec<_>>().join(","))
 }
 
+/// A floor that raised a field before pricing; surfaced in the quote so the customer is told.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Adjustment {
+    pub rule_id: String,
+    pub label: String,
+    pub field: String,
+    pub from: i64,
+    pub to: i64,
+}
+
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Outcome {
@@ -84,6 +95,8 @@ pub enum Outcome {
         total: i64,
         valid_until: String,
         lines: Vec<Line>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        adjustments: Vec<Adjustment>,
     },
     #[serde(rename_all = "camelCase")]
     Refusal {
@@ -133,15 +146,17 @@ fn charge(c: &Charge, f: &Fields) -> Result<i64, KernelError> {
             let billable = int_field(f, field)?.saturating_sub(*included).max(0);
             unit_amount.checked_mul(billable).ok_or(KernelError::Overflow)
         }
-        Charge::Tiered { field, tiers } => {
+        Charge::Tiered { field, tiers } => tier_amount(tiers, int_field(f, field)?),
+        Charge::TieredPerUnit { field, tiers } => {
             let v = int_field(f, field)?;
-            tiers
-                .iter()
-                .find(|t| t.up_to.is_none_or(|u| v <= u))
-                .map(|t| t.amount)
-                .ok_or(KernelError::Invalid)
+            tier_amount(tiers, v)?.checked_mul(v).ok_or(KernelError::Overflow)
         }
     }
+}
+
+/// The amount of the first band whose inclusive upper bound is at or above `v`.
+fn tier_amount(tiers: &[Tier], v: i64) -> Result<i64, KernelError> {
+    tiers.iter().find(|t| t.up_to.is_none_or(|u| v <= u)).map(|t| t.amount).ok_or(KernelError::Invalid)
 }
 
 /// Tax rounding rule: `round_half_up(amount * bps / 10_000)` in exact integer
@@ -152,7 +167,7 @@ fn tax(amount: i64, bps: i64) -> Result<i64, KernelError> {
 }
 
 pub fn evaluate(input: Input, rate_card_hash: String) -> Result<Outcome, KernelError> {
-    let Input { rate_card: card, fields, availability, now } = input;
+    let Input { rate_card: card, mut fields, availability, now } = input;
 
     // Negotiation is never the model's or the kernel's to do: a discount, price-match or package-deal
     // request is handed to the owner whatever else the message contained (intent is a typed enum value).
@@ -178,6 +193,33 @@ pub fn evaluate(input: Input, rate_card_hash: String) -> Result<Outcome, KernelE
         }
         if availability.blocked_dates.iter().any(|b| b == d) {
             return Ok(refuse(RefusalReason::DateUnavailable, None));
+        }
+    }
+
+    // Floors (e.g. a minimum order quantity) run before pricing, so rules and tiers see the quantity actually quoted.
+    let mut adjustments = Vec::new();
+    for m in &card.minimums {
+        if !m.when.iter().all(|c| holds(c, &fields)) {
+            continue;
+        }
+        if let Some(Val::Int(n)) = fields.get(&m.field) {
+            if *n < m.min {
+                match m.below {
+                    BelowMinimum::Refuse => {
+                        return Ok(refuse(RefusalReason::OutOfPolicy, Some(format!("below_minimum:{}", m.field))));
+                    }
+                    BelowMinimum::RaiseToMin => {
+                        adjustments.push(Adjustment {
+                            rule_id: m.rule_id.clone(),
+                            label: m.label.clone(),
+                            field: m.field.clone(),
+                            from: *n,
+                            to: m.min,
+                        });
+                        fields.insert(m.field.clone(), Val::Int(m.min));
+                    }
+                }
+            }
         }
     }
 
@@ -212,5 +254,6 @@ pub fn evaluate(input: Input, rate_card_hash: String) -> Result<Outcome, KernelE
         total,
         valid_until: date::format_instant(valid_s),
         lines,
+        adjustments,
     })
 }
