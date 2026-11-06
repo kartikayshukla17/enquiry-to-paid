@@ -50,6 +50,18 @@ pub enum Cond {
     MonthIn { field: String, months: Vec<i64> },
 }
 
+impl Cond {
+    pub fn field(&self) -> &str {
+        match self {
+            Cond::Eq { field, .. }
+            | Cond::In { field, .. }
+            | Cond::Range { field, .. }
+            | Cond::WeekdayIn { field, .. }
+            | Cond::MonthIn { field, .. } => field,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Tier {

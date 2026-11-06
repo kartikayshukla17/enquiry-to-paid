@@ -1,0 +1,54 @@
+{
+  "comment": "FICTIONAL example rate card for tests and demos. Not a real venue or real prices. Deliberately limited coverage: core rules only match Oct-Mar and 20-250 guests.",
+  "currency": "INR",
+  "fictional": true,
+  "holdHours": 48,
+  "id": "fictional-banquet-seasonal",
+  "label": "FICTIONAL: Marigold Hall seasonal sample rate card (covers Oct-Mar, up to 250 guests)",
+  "requiredFields": [
+    { "field": "service", "question": "What kind of event is it?" },
+    { "field": "date", "question": "Which date do you have in mind?" },
+    { "field": "guestCount", "question": "Roughly how many guests?" }
+  ],
+  "rules": [
+    {
+      "ruleId": "hall-weekday",
+      "core": true,
+      "label": "Hall hire (Mon-Thu)",
+      "when": [
+        { "field": "service", "op": "eq", "value": "banquet" },
+        { "field": "date", "op": "weekday_in", "days": ["mon", "tue", "wed", "thu"] },
+        { "field": "date", "op": "month_in", "months": [10, 11, 12, 1, 2, 3] },
+        { "field": "guestCount", "op": "range", "min": 20, "max": 250 }
+      ],
+      "charge": { "kind": "flat", "amount": 15000000 }
+    },
+    {
+      "ruleId": "hall-weekend",
+      "core": true,
+      "label": "Hall hire (Fri-Sun)",
+      "when": [
+        { "field": "service", "op": "eq", "value": "banquet" },
+        { "field": "date", "op": "weekday_in", "days": ["fri", "sat", "sun"] },
+        { "field": "date", "op": "month_in", "months": [10, 11, 12, 1, 2, 3] },
+        { "field": "guestCount", "op": "range", "min": 20, "max": 250 }
+      ],
+      "charge": { "kind": "flat", "amount": 25000000 }
+    },
+    {
+      "ruleId": "catering-per-plate",
+      "core": true,
+      "label": "Catering per plate",
+      "when": [
+        { "field": "service", "op": "eq", "value": "banquet" },
+        { "field": "date", "op": "month_in", "months": [10, 11, 12, 1, 2, 3] },
+        { "field": "guestCount", "op": "range", "min": 20, "max": 250 }
+      ],
+      "charge": { "kind": "per_unit", "field": "guestCount", "unitAmount": 125000 }
+    }
+  ],
+  "taxLines": [{ "ruleId": "gst-18", "label": "GST 18%", "rateBps": 1800 }],
+  "timezone": "Asia/Kolkata",
+  "validDays": 7,
+  "version": 1
+}

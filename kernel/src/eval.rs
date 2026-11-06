@@ -26,12 +26,52 @@ pub struct Line {
     pub rule_id: String,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
+// Variants beyond the first three are produced by later tickets (T6 confidence, T8 discount,
+// T10 calendar, T12 policy); they exist now so the reason set is closed and exhaustively matched.
+#[allow(dead_code)]
 pub enum RefusalReason {
     NoCoveringRule,
     MissingRequiredField,
     DateUnavailable,
+    DiscountRequest,
+    LowConfidence,
+    OutOfPolicy,
+    CalendarMismatch,
+}
+
+impl RefusalReason {
+    /// Wire code. Exhaustive match with no wildcard: adding a reason breaks the build
+    /// here until it is handled. This match IS the serialisation.
+    pub fn code(&self) -> &'static str {
+        match self {
+            RefusalReason::NoCoveringRule => "no_covering_rule",
+            RefusalReason::MissingRequiredField => "missing_required_field",
+            RefusalReason::DateUnavailable => "date_unavailable",
+            RefusalReason::DiscountRequest => "discount_request",
+            RefusalReason::LowConfidence => "low_confidence",
+            RefusalReason::OutOfPolicy => "out_of_policy",
+            RefusalReason::CalendarMismatch => "calendar_mismatch",
+        }
+    }
+}
+
+impl Serialize for RefusalReason {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.code())
+    }
+}
+
+/// Fields of the closest-matching core rule that fail to hold (sorted, comma-joined).
+/// Field names only, never customer values.
+fn rule_gap(card: &RateCard, f: &Fields) -> Option<String> {
+    let mut best: Option<(usize, std::collections::BTreeSet<&str>)> = None;
+    for rule in card.rules.iter().filter(|r| r.core) {
+        let failing: Vec<&Cond> = rule.when.iter().filter(|c| !holds(c, f)).collect();
+        if best.as_ref().is_none_or(|(n, _)| failing.len() < *n) {
+            best = Some((failing.len(), failing.iter().map(|c| c.field()).collect()));
+        }
+    }
+    best.map(|(_, set)| set.into_iter().collect::<Vec<_>>().join(","))
 }
 
 #[derive(Serialize)]
@@ -134,7 +174,7 @@ pub fn evaluate(input: Input, rate_card_hash: String) -> Result<Outcome, KernelE
         lines.push(Line { label: rule.label.clone(), amount, rule_id: rule.rule_id.clone() });
     }
     if !covered {
-        return Ok(refuse(RefusalReason::NoCoveringRule, None));
+        return Ok(refuse(RefusalReason::NoCoveringRule, rule_gap(&card, &fields)));
     }
 
     let mut total = subtotal;

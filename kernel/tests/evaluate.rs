@@ -78,7 +78,7 @@ fn no_matching_rule_is_a_typed_refusal() {
         json!({"service":"banquet","date":"2026-12-12","guestCount":900,"language":"en","confidenceBps":9000}),
         no_blocks(),
     );
-    assert_eq!(out, json!({"kind":"refusal","reason":"no_covering_rule"}));
+    assert_eq!(out, json!({"kind":"refusal","reason":"no_covering_rule","ruleGap":"guestCount"}));
 }
 
 #[test]
@@ -130,4 +130,33 @@ fn overflow_is_a_typed_error() {
     card["rules"] = json!([{"ruleId":"r","core":true,"label":"R","when":[],"charge":{"kind":"per_unit","field":"guestCount","unitAmount":9223372036854775807i64}}]);
     let input = json!({"rateCard":card,"fields":saturday_120(),"availability":no_blocks(),"now":"2026-11-07T10:00:00Z"});
     assert_eq!(evaluate(&input.to_string()), r#"{"ok":false,"error":"overflow"}"#);
+}
+
+const SEASONAL: &str = include_str!("../../rate-cards/fictional-banquet-seasonal.json");
+
+fn run_card(card: &str, fields: Value) -> Value {
+    let card: Value = serde_json::from_str(card).unwrap();
+    let input = json!({"rateCard": card, "fields": fields, "availability": {"blockedDates": []}, "now": "2026-11-07T10:00:00Z"});
+    serde_json::from_str(&evaluate(&input.to_string())).unwrap()
+}
+
+#[test]
+fn out_of_coverage_refusal_names_the_rule_gap() {
+    let out = run_card(SEASONAL, json!({"service":"banquet","date":"2026-06-13","guestCount":300,"language":"en","confidenceBps":9000}));
+    assert_eq!(out["kind"], "refusal");
+    assert_eq!(out["reason"], "no_covering_rule");
+    assert_eq!(out["ruleGap"], "date,guestCount");
+}
+
+#[test]
+fn closest_rule_gap_is_a_single_field_when_only_one_condition_fails() {
+    let out = run_card(SEASONAL, json!({"service":"banquet","date":"2026-06-13","guestCount":120,"language":"en","confidenceBps":9000}));
+    assert_eq!(out["reason"], "no_covering_rule");
+    assert_eq!(out["ruleGap"], "date");
+}
+
+#[test]
+fn seasonal_card_still_quotes_inside_coverage() {
+    let out = run_card(SEASONAL, json!({"service":"banquet","date":"2026-12-12","guestCount":120,"language":"en","confidenceBps":9000}));
+    assert_eq!(out["kind"], "quote");
 }
