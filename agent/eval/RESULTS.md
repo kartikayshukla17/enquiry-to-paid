@@ -94,10 +94,10 @@ Why these happen: in each unsafe case the recorded model invents or misreads a f
 | | |
 |---|---|
 | Provider / model | `fixture` / `recorded-fixture-v1` (hand-seeded; no network call was made) |
-| Extraction prompt hash | `561b3af9e3452222bca8d3e436fcba48b8a8fadcf2024a9034500eb7426ad3d1` |
-| Schema version | `extract-v2` |
+| Extraction prompt hash | `09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037` |
+| Schema version | `extract-v3` |
 | Rate card | `fictional-banquet`, hash `4d4c97d2be36a2a4d244d9f35336674e93ef2960e57e2e90ce87e8eec3d0bb37` |
-| Recordings hash | `4fc5303841869e9d7cb082670ed5f03349eae3edba38d6688095d8f1c9d3a5d2` |
+| Recordings hash | `7603e72768ba4152c20cc3aa970b772a1b15ab57972d690722bb539bb61e0aca` |
 | Set `en.jsonl` sha256 | `72360fd045d68e79a787d51c4f47b8b4ce7c1a5218ccb8eac73c2d9013a26001` |
 | Set `hinglish.jsonl` sha256 | `297b5790194b93ea41b770682b88356d51da2d3e5452fc77d50191373609f38c` |
-| Baseline | `agent/eval/baselines/recorded-fixture-v1.561b3af9.json` |
+| Baseline | `agent/eval/baselines/recorded-fixture-v1.09cc42a3.json` |

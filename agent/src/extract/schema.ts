@@ -2,7 +2,16 @@ import { INTENTS, type ExtractedFields, type Intent } from "../kernel/types.js";
 
 export type ValidationResult = { ok: true; fields: ExtractedFields } | { ok: false; error: string };
 
-const ALLOWED_KEYS = new Set(["service", "date", "guestCount", "locality", "language", "confidenceBps", "intent"]);
+const ALLOWED_KEYS = new Set(["service", "date", "guestCount", "locality", "language", "confidenceBps", "intent", "package", "quantity", "hours", "distanceKm"]);
+/**
+ * Generic bounded integer fields besides guestCount: a card says what they mean (units ordered, hours of
+ * coverage, kilometres), the schema only says they are integers within a sane range.
+ */
+const BOUNDED_INTS = [
+  { key: "quantity", min: 1, max: 1_000_000 },
+  { key: "hours", min: 1, max: 48 },
+  { key: "distanceKm", min: 0, max: 100_000 },
+] as const;
 export const LANGUAGES = ["en", "hi", "hinglish"] as const;
 const SLUG = /^[a-z][a-z0-9-]{0,47}$/; // short identifiers only; a sentence can never match
 
@@ -51,6 +60,16 @@ export function validateExtraction(raw: unknown): ValidationResult {
   if (has("locality")) {
     if (typeof o.locality !== "string" || !SLUG.test(o.locality)) return { ok: false, error: "locality invalid" };
     out.locality = o.locality;
+  }
+  if (has("package")) {
+    if (typeof o.package !== "string" || !SLUG.test(o.package)) return { ok: false, error: "package invalid" };
+    out.package = o.package;
+  }
+  for (const { key, min, max } of BOUNDED_INTS) {
+    if (!has(key)) continue;
+    const v = o[key];
+    if (typeof v !== "number" || !Number.isInteger(v) || v < min || v > max) return { ok: false, error: `${key} invalid` };
+    out[key] = v;
   }
   return { ok: true, fields: out };
 }

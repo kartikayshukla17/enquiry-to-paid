@@ -1,0 +1,26 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Sirf 10 log hain, 21 November 2026 ko chhoti party ke liye hall mil jayega?",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": "2026-11-21",
+      "guestCount": 10,
+      "locality": null,
+      "language": "hinglish",
+      "confidenceBps": 9000,
+      "intent": "enquiry"
+    }
+  }
+}

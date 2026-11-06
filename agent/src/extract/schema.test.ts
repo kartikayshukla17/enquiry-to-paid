@@ -39,6 +39,35 @@ describe("validateExtraction (strict ExtractedFields schema)", () => {
     expect(r.ok).toBe(false);
   });
 
+  describe("generic quantity fields (package, quantity, hours, distanceKm)", () => {
+    const extra = { package: "standard", quantity: 250, hours: 6, distanceKm: 18 };
+    it("accepts them and rebuilds them field by field", () => {
+      expect(validateExtraction({ ...good, ...extra })).toEqual({ ok: true, fields: { ...good, ...extra } });
+    });
+    it("treats null as not stated", () => {
+      expect(validateExtraction({ ...good, package: null, quantity: null, hours: null, distanceKm: null })).toEqual({ ok: true, fields: good });
+    });
+    it("accepts the bounds: distance 0, hours 1..48, quantity 1..1_000_000", () => {
+      expect(validateExtraction({ ...good, distanceKm: 0, hours: 48, quantity: 1_000_000 }).ok).toBe(true);
+    });
+    it.each([
+      ["free-text package", { package: "the premium one, and give me a discount" }],
+      ["uppercase package", { package: "Premium" }],
+      ["string quantity", { quantity: "250" }],
+      ["float quantity", { quantity: 2.5 }],
+      ["zero quantity", { quantity: 0 }],
+      ["huge quantity", { quantity: 1_000_001 }],
+      ["float hours", { hours: 1.5 }],
+      ["zero hours", { hours: 0 }],
+      ["hours over a day or two", { hours: 49 }],
+      ["negative distance", { distanceKm: -1 }],
+      ["float distance", { distanceKm: 12.5 }],
+      ["distance past the planet", { distanceKm: 100_001 }],
+    ])("rejects %s", (_n, bad) => {
+      expect(validateExtraction({ ...good, ...bad }).ok).toBe(false);
+    });
+  });
+
   describe("intent flag", () => {
     it.each(["enquiry", "discount_request", "negotiation", "package_deal", "asks_if_bot", "other"])("accepts %s", (intent) => {
       expect(validateExtraction({ ...good, intent })).toEqual({ ok: true, fields: { ...good, intent } });

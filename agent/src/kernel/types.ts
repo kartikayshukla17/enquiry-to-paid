@@ -59,6 +59,11 @@ export interface ExtractedFields {
   date?: string; // YYYY-MM-DD
   guestCount?: number;
   locality?: string;
+  /** Generic typed fields a card may key on: a slug choice and bounded integers (see extract/schema.ts). */
+  package?: string;
+  quantity?: number;
+  hours?: number;
+  distanceKm?: number;
   language: string;
   /** Per-message classification; never stored on the thread. Absent means the model did not classify. */
   intent?: Intent;

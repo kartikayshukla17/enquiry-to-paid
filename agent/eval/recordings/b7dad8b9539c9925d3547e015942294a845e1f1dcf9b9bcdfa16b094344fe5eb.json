@@ -1,0 +1,25 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Birthday party ke liye 10-11-12 ko hall chahiye, 60 log.",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": "2012-11-10",
+      "guestCount": 60,
+      "locality": null,
+      "language": "hinglish",
+      "confidenceBps": 7500
+    }
+  }
+}

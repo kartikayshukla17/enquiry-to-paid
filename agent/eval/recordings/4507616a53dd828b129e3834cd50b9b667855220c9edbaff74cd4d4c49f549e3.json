@@ -1,0 +1,25 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Is the banquet free on the third of January for about 150 guests?",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": "2026-01-03",
+      "guestCount": 150,
+      "locality": null,
+      "language": "en",
+      "confidenceBps": 8000
+    }
+  }
+}

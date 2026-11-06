@@ -1,0 +1,25 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Teen sau pachaas log aayenge, 28 November 2026 ko shaadi hai. Banquet milega?",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": "2026-11-28",
+      "guestCount": 305,
+      "locality": null,
+      "language": "hinglish",
+      "confidenceBps": 8600
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Need your banquet for a birthday party, around 80 guests, somewhere in Greater Noida West.",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": null,
+      "guestCount": 80,
+      "locality": "greater-noida-west",
+      "language": "en",
+      "confidenceBps": 8800
+    }
+  }
+}

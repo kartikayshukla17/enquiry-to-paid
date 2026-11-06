@@ -1,0 +1,26 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Pachaas log hain, 17 December 2026 Thursday ko lunch rakhna hai banquet mein.",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": "2026-12-17",
+      "guestCount": 50,
+      "locality": null,
+      "language": "hinglish",
+      "confidenceBps": 9000,
+      "intent": "enquiry"
+    }
+  }
+}

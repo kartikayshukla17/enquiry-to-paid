@@ -4,9 +4,9 @@
     "fixture/recorded-fixture-v1": {
       "provider": "fixture",
       "model": "recorded-fixture-v1",
-      "promptHash8": "561b3af9",
-      "baseline": "recorded-fixture-v1.561b3af9.json",
-      "enabledAt": "a94d9d936c3f1ceff279625d5fc0021c10cca427e64943bb3a3141bf82aeb2ec"
+      "promptHash8": "09cc42a3",
+      "baseline": "recorded-fixture-v1.09cc42a3.json",
+      "enabledAt": "bf8796db8a29e69be3cd648b84dd8f2552b5dd4d98481779a3a1dd326bba2edf"
     }
   }
 }

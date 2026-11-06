@@ -72,7 +72,7 @@ describe("keyword-extractor-v0 (rule-based, offline, region local)", () => {
 describe("weak-fixture-v0 (deliberately misreads Hinglish numbers)", () => {
   it("is labelled as its own model, leaves English alone and misreads Hinglish counts", async () => {
     const llm = createProvider({ LLM_PROVIDER: "fixture", LLM_MODEL: "weak-fixture-v0" }, { registry: false });
-    const en = await llm.extract({ text: ENQUIRY, schemaVersion: "extract-v2" });
+    const en = await llm.extract({ text: ENQUIRY, schemaVersion: "extract-v3" });
     expect(en).toMatchObject({ modelId: "weak-fixture-v0", provider: "fixture", region: "local" });
     expect((en.fields as { guestCount: number }).guestCount).toBe(120);
   });
@@ -87,7 +87,7 @@ describe("weak-fixture-v0 on Hinglish", () => {
       }),
       wordReply: async () => ({ modelId: "m", provider: "fixture", region: "local", usage: { tokens: 0 }, text: "x" }),
     };
-    const r = await withWeakHinglishNumbers(stub).extract({ text: "do sau log", schemaVersion: "extract-v2" });
+    const r = await withWeakHinglishNumbers(stub).extract({ text: "do sau log", schemaVersion: "extract-v3" });
     expect((r.fields as { guestCount: number }).guestCount).toBe(2);
     expect(r.modelId).toBe("weak-fixture-v0");
   });

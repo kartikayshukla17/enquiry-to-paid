@@ -51,7 +51,7 @@ describe("checkEnable: weak model", () => {
     const r2 = await enableProvider("fixture", "weak-fixture-v0", deps);
     expect(r2.ok).toBe(false);
     expect(Object.keys(loadRegistry(deps.registryPath).enabled)).toEqual(["fixture/recorded-fixture-v1"]);
-    expect(existsSync(path.join(tmp, "baselines", "weak-fixture-v0.561b3af9.json"))).toBe(false);
+    expect(existsSync(path.join(tmp, "baselines", "weak-fixture-v0.09cc42a3.json"))).toBe(false);
   });
 });
 
@@ -60,11 +60,11 @@ describe("checkEnable: equal or better candidate", () => {
     const r = await enableProvider("fixture", "recorded-fixture-v1b", deps);
     expect(r.ok).toBe(true);
     expect(r.out).toContain("ENABLED fixture/recorded-fixture-v1b");
-    const file = path.join(tmp, "baselines", "recorded-fixture-v1b.561b3af9.json");
+    const file = path.join(tmp, "baselines", "recorded-fixture-v1b.09cc42a3.json");
     expect(existsSync(file)).toBe(true);
     const reg = loadRegistry(deps.registryPath);
     expect(reg.enabled["fixture/recorded-fixture-v1b"]).toMatchObject({
-      baseline: "recorded-fixture-v1b.561b3af9.json",
+      baseline: "recorded-fixture-v1b.09cc42a3.json",
       enabledAt: sha256(await readFile(file)),
     });
     expect(reg.current).toBe("fixture/recorded-fixture-v1"); // not promoted unless asked
@@ -117,7 +117,7 @@ describe("pnpm provider (exit codes)", () => {
     expect((await run(["check", "fixture", "weak-fixture-v0"])).code).toBe(1);
     const ok = await run(["check", "fixture", "recorded-fixture-v1b"]);
     expect(ok.code).toBe(0);
-    expect(existsSync(path.join(tmp, "baselines", "recorded-fixture-v1b.561b3af9.json"))).toBe(false);
+    expect(existsSync(path.join(tmp, "baselines", "recorded-fixture-v1b.09cc42a3.json"))).toBe(false);
   });
   it("enable: 1 when blocked, 0 when enabled; 2 on bad usage", async () => {
     const blocked = await run(["enable", "fixture", "weak-fixture-v0"]);
