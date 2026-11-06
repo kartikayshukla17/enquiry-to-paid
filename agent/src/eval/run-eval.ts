@@ -6,6 +6,7 @@ import { extractFields } from "../extract/extract.js";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import type { Outcome, Quote } from "../kernel/types.js";
 import { createReplayProvider } from "../llm/fixture/index.js";
+import type { LlmProvider } from "../llm/types.js";
 import { EXTRACT_PROMPT_HASH, SCHEMA_VERSION } from "../llm/prompts.js";
 import { handleMessage } from "../pipeline/handle-message.js";
 import { DEFAULT_LOW_CONFIDENCE_BPS } from "../pipeline/handle-enquiry.js";
@@ -96,6 +97,10 @@ export interface EvalOptions {
   kernel?: KernelBridge;
   setsDir?: string;
   recordingsDir?: string;
+  /** Candidate under test (default: replay of the eval recordings, labelled recorded-fixture-v1). */
+  llm?: LlmProvider;
+  /** Identity recorded in the report and the baseline file name; defaults to the recorded fixture. */
+  candidate?: { provider: string; modelId: string; label?: string };
 }
 
 const bps = (num: number, den: number): number => (den === 0 ? 0 : Math.round((num * 10_000) / den));
@@ -163,7 +168,7 @@ export async function runEval(opts: EvalOptions): Promise<EvalReport> {
   const recordingsDir = opts.recordingsDir ?? DEFAULT_RECORDINGS_DIR;
   const { cases, setHashes } = await loadSets(opts.setsDir ?? DEFAULT_SETS_DIR);
   const rateCard = await loadRateCard();
-  const llm = createReplayProvider(recordingsDir);
+  const llm = opts.llm ?? createReplayProvider(recordingsDir);
   const events: EscalationEvent[] = [];
   const notifier = collectingNotifier(events);
 
@@ -228,9 +233,9 @@ export async function runEval(opts: EvalOptions): Promise<EvalReport> {
   const card = rateCard as { id: string };
   return {
     provenance: {
-      label: PROVENANCE_LABEL,
-      modelId: EVAL_MODEL_ID,
-      provider: "fixture",
+      label: opts.candidate?.label ?? PROVENANCE_LABEL,
+      modelId: opts.candidate?.modelId ?? EVAL_MODEL_ID,
+      provider: opts.candidate?.provider ?? "fixture",
       promptHash: EXTRACT_PROMPT_HASH,
       promptHash8: EXTRACT_PROMPT_HASH.slice(0, 8),
       schemaVersion: SCHEMA_VERSION,

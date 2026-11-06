@@ -11,6 +11,7 @@
     "lint:agent": "pnpm --filter agent typecheck",
     "sim": "pnpm --filter agent sim",
     "eval": "pnpm --filter agent eval",
+    "provider": "pnpm --filter agent provider",
     "adversarial": "pnpm --filter agent adversarial",
     "ledger": "pnpm --filter agent ledger",
     "test":"pnpm build:kernel && pnpm --filter agent test && cargo test --manifest-path kernel/Cargo.toml"

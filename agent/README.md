@@ -1,5 +1,25 @@
 # agent
 
+## Provider swap gate (T9)
+
+Needs the local Postgres (a throwaway database is created and dropped) and `pnpm build:kernel` once. No network.
+
+```sh
+pnpm provider check fixture weak-fixture-v0      # run the eval sets for the candidate, compare per language, write nothing
+pnpm provider enable fixture recorded-fixture-v1b [--promote]   # same gate; on pass writes eval/baselines/<model>.<prompthash8>.json and the registry entry
+LLM_PROVIDER=keyword LLM_MODEL=keyword-extractor-v0 pnpm sim chat "..."   # swap by config only; runtime refuses it until it is enabled
+```
+
+- Exit codes: 0 passes / enabled, 1 blocked by the gate, 2 usage or setup error (including a provider with no offline eval path).
+- Providers behind `LlmProvider` (no pipeline code differs between them): `groq`, `fixture` (recorded-fixture-v1, plus the same replay relabelled `recorded-fixture-v1b`, plus `weak-fixture-v0`, a wrapper that misreads Hinglish/Hindi hundreds like "do sau" as 2), and `keyword` (`keyword-extractor-v0`, an independent regex extractor for plain English and Latin-script Hinglish, region `local`). Selected by `LLM_PROVIDER` and `LLM_MODEL` only.
+- Registry: `agent/config/enabled-providers.json` maps `provider/model` to its baseline file and `enabledAt` (sha256 of that baseline, i.e. the eval run that justified it); `current` names the reference model. `createProvider` throws for a provider/model that is not listed (tests and the harness pass `registry: false`; record mode is dev tooling and exempt).
+- Gate: per language (english, hinglish, hindi) the candidate must not be worse than the current model's baseline on field accuracy, schema-valid rate, outcome accuracy, unsafe quotes (count must not exceed) and wrong-price quotes (count must not exceed). Output names each regression, e.g. `BLOCKED: hinglish.outcomeAccuracy 50.0% < baseline 56.3%`. A candidate that already has its own baseline must also not regress against that. `--promote` makes an enabled model the new reference.
+- Region: every ledger row carries provider, model and region; `customerTextSeenBy(pool, tenantId?)` (`src/provider/seen-by.ts`) lists each distinct provider/model/region that received customer text, derived from the enquiry rows.
+
+Ruling: enabling is decided by the eval, not by hand: the registry is only written by `pnpm provider enable` after a pass. Editing the JSON by hand is possible (it is a committed file), and is then visible in review; the runtime guard checks presence, not the hash.
+Ruling: the first honest result is that `keyword-extractor-v0` is BLOCKED against the hand-seeded baseline (it reads English and Hinglish fields well but fails Devanagari entirely, and quotes one more unsafe case in Hinglish). The baseline is itself hand-seeded, so "better than baseline" means better than a scripted model, not better than a real one; a live provider must be gated on recorded live responses for the eval sets before it can be enabled.
+Ruling: `groq` models have no offline eval path yet, so they cannot be enabled by this command; the committed registry lists only the recorded fixture.
+
 ## Adversarial inputs, no negotiation, honest disclosure (T8)
 
 Same prerequisites as the eval harness (local Postgres, `pnpm build:kernel` once, no network).

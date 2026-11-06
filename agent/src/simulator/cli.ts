@@ -16,7 +16,7 @@ async function main(argv: string[]): Promise<number> {
   if ((cmd !== "run" && cmd !== "two-tenants" && cmd !== "chat") || !fixture) {
     console.error(
       'usage: pnpm sim run <fixture.json> | pnpm sim two-tenants <fixture.json> | pnpm sim chat "<english text>" [--tenant <id>] [--card <rate-cards/x.json>] [--customer <ref>] [--words]\n' +
-        "  chat/run use LLM_PROVIDER=groq|fixture (default fixture) and LLM_MODE=record|replay|live (default replay, offline)",
+        "  chat/run use LLM_PROVIDER=groq|fixture|keyword (default fixture), LLM_MODEL (must be in agent/config/enabled-providers.json) and LLM_MODE=record|replay|live (default replay, offline)",
     );
     return 2;
   }
@@ -46,7 +46,9 @@ async function main(argv: string[]): Promise<number> {
       const card = flag(argv, "--card");
       const customer = flag(argv, "--customer");
       const mode = process.env.LLM_MODE ?? "replay";
-      console.error(`note: LLM_PROVIDER=${process.env.LLM_PROVIDER ?? "fixture"} LLM_MODE=${mode}${mode === "replay" ? " (offline, recorded responses)" : ""}`);
+      console.error(
+        `note: LLM_PROVIDER=${process.env.LLM_PROVIDER ?? "fixture"}${process.env.LLM_MODEL ? ` LLM_MODEL=${process.env.LLM_MODEL}` : ""} LLM_MODE=${mode}${mode === "replay" ? " (offline)" : ""}`,
+      );
       const c = await runChat(fixture, {
         pool,
         ...(tenant && { tenantId: tenant }),

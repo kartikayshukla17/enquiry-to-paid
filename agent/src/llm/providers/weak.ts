@@ -23,3 +23,15 @@ export function withWeakHinglishNumbers(inner: LlmProvider): LlmProvider {
     },
   };
 }
+
+/** Same behaviour, different identity: stands in for a distinct model that happens to answer identically. */
+export function withModelId(inner: LlmProvider, modelId: string): LlmProvider {
+  return {
+    async extract(input) {
+      return { ...(await inner.extract(input)), modelId };
+    },
+    async wordReply(input) {
+      return { ...(await inner.wordReply(input)), modelId };
+    },
+  };
+}
