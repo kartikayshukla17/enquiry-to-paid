@@ -1,0 +1,12 @@
+{
+  "current": "fixture/recorded-fixture-v1",
+  "enabled": {
+    "fixture/recorded-fixture-v1": {
+      "provider": "fixture",
+      "model": "recorded-fixture-v1",
+      "promptHash8": "561b3af9",
+      "baseline": "recorded-fixture-v1.561b3af9.json",
+      "enabledAt": "a94d9d936c3f1ceff279625d5fc0021c10cca427e64943bb3a3141bf82aeb2ec"
+    }
+  }
+}

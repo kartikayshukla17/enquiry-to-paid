@@ -82,13 +82,13 @@ describe("recorded-fixture provider", () => {
     expect(() => createProvider({ LLM_PROVIDER: "nope" })).toThrow(/LLM_PROVIDER/);
     expect(() => createProvider({ LLM_PROVIDER: "fixture", LLM_MODE: "live" })).toThrow(LlmError);
     expect(() => createProvider({ LLM_PROVIDER: "fixture", LLM_MODE: "record" })).toThrow(LlmError);
-    expect(() => createProvider({ LLM_PROVIDER: "groq", LLM_MODE: "live" })).toThrow(/GROQ_API_KEY/);
+    expect(() => createProvider({ LLM_PROVIDER: "groq", LLM_MODE: "live" }, { registry: false })).toThrow(/GROQ_API_KEY/);
     expect(() => createProvider({ LLM_MODE: "sometimes" })).toThrow(/LLM_MODE/);
   });
 
   it("groq in live mode uses the live provider directly", async () => {
     const live = liveStub();
-    const p = createProvider({ LLM_PROVIDER: "groq", LLM_MODE: "live" }, { liveProvider: live.provider });
+    const p = createProvider({ LLM_PROVIDER: "groq", LLM_MODE: "live" }, { liveProvider: live.provider, registry: false });
     await p.extract({ text: "x", schemaVersion: "extract-v1" });
     expect(live.calls).toHaveLength(1);
   });
