@@ -6,9 +6,13 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint && pnpm lint:agent",
     "build:kernel": "cargo build --release --target wasm32-unknown-unknown --manifest-path kernel/Cargo.toml && node scripts/copy-kernel.mjs",
-    "test": "pnpm build:kernel && pnpm --filter agent test && cargo test --manifest-path kernel/Cargo.toml"
+    "lint:agent": "pnpm --filter agent typecheck",
+    "sim": "pnpm --filter agent sim",
+    "eval": "pnpm --filter agent eval",
+    "ledger": "pnpm --filter agent ledger",
+    "test":"pnpm build:kernel && pnpm --filter agent test && cargo test --manifest-path kernel/Cargo.toml"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
