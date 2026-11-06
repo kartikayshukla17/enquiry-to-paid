@@ -16,6 +16,10 @@ The card hash pinned in every quote is the SHA-256 of the canonical (key-sorted,
 | `fictional-b2b-supplier.json` | Brightline Fasteners (T12): unit price by volume band (`tiered_per_unit`, all-units pricing, `upTo` inclusive), a per-product MOQ with BOTH card flags (steel-bolts `refuse` below 100, nylon-ties `raise_to_min` to 500), small-order handling fee, GST. Covers up to 50,000 bolts / 200,000 ties. |
 | `fictional-contractor.json` | Hearthside Repairs (T13): deliberately narrow. Three fixed-price small repairs, 1-3 items, two listed localities; everything else refuses with `no_covering_rule` and the card's `refusalSuggestion` (`book_site_visit`) with its own customer wording in `refusalSuggestionReply`. |
 
+## Templates (T14)
+
+`templates/fictional-banquet-template/` is the banquet card as Sheet-shaped CSVs an owner can fill (prices in rupees, not paise). `pnpm card compile rate-cards/templates/fictional-banquet-template` compiles it to a card with the **same hash** as `fictional-banquet.json`. A card compiled from a template, like any card, quotes only after it is approved through read-backs (`pnpm card approve`); see `agent/README.md`.
+
 ## Rules-language notes (generic, no vertical in the kernel)
 
 - `refusalSuggestion` / `refusalSuggestionReply` (card level, optional): a short code the kernel echoes on `no_covering_rule` refusals (and nothing else), and the customer-facing sentence the agent appends to the holding reply. The reply text must contain no digits. Both are provided by the card; the engine invents none.

@@ -214,3 +214,39 @@ pnpm ledger verify                               # still works (owner connection
 
 Ruling: Better Auth's tables (`user, session, account, verification, organization, member, invitation`) are excluded from RLS with a reason (the
 library queries them before a tenant is known); `e2p_app`, `anon`, `authenticated` have no privileges on them, and all tenant-scoped app tables stay RLS-protected.
+
+## Rate-card compile, approval and activation gate (T14)
+
+An owner's pricing comes in as a Sheet-shaped template, is compiled, read back as worked examples, and only then can quote.
+
+```bash
+pnpm card compile rate-cards/templates/fictional-banquet-template      # exact broken cells (exit 1) or the card hash (exit 0)
+pnpm card approve rate-cards/templates/fictional-banquet-template --no 2     # simulated read-backs: example 2 wrong -> stays a draft (exit 1)
+pnpm card approve rate-cards/templates/fictional-banquet-template --yes      # every example right -> approved, active (exit 0)
+pnpm card demo                                                         # the whole story on a throwaway database
+pnpm sim run fixtures/card-template-banquet-01.json                    # template card, approved through the gate, quotes like the JSON card
+pnpm sim run fixtures/card-unapproved-banquet-01.json                  # draft-only card: out_of_policy / card_not_approved, holding reply, escalation
+```
+
+- **Template** (`rate-cards/templates/<name>/*.csv`, one CSV per sheet, so each is a Google Sheets tab export): `meta.csv` (key,value), `required_fields.csv`,
+  `rules.csv` (one row per charge), `conditions.csv` (one row per condition, linked by `rule_id`: `is | one_of | between | weekday_in | month_in`),
+  `tiers.csv` (bands for `tiered` / `tiered_per_unit`), `taxes.csv` (percent), optional `minimums.csv`. Extra columns (notes) are ignored.
+  Money cells are major units as decimal text (`1250.50`); `parseMinor` turns them into integer minor units by string arithmetic, no float is ever created.
+- **Compiler** (`src/ratecard/compile.ts`): template -> rules JSON -> `kernel.validateCard` (new Rust export `validate_card`, with JSON paths) -> `kernel.rateCardHash`.
+  Errors are `<file> row <n>, column "<header>": <what is wrong>` (spreadsheet row, header = row 1) for every broken cell in one pass; a kernel complaint is mapped back
+  to the cell that produced it (e.g. a tax rate over 100% names `taxes.csv row 2, column "rate_percent"`).
+- **Approval** (`src/ratecard/approve.ts`): `startApproval` builds 3 to 5 worked examples from the card's own conditions (every core rule and every surcharge appears
+  in at least one) and prices them with the kernel; they are stored with the revision. `submitApproval` needs a yes/no for every example from a member whose role is
+  `owner` or `manager`. All yes: revision `approved`, `approved_at`, `approved_by` (member id), `approved_hash` pinned, ledger entry `rate_card_approved` carrying the card
+  hash. Any no: stays `draft`, `rejection_reason` stored, ledger entry `rate_card_rejected`.
+- **Gate** (`src/ratecard/store.ts` `loadActiveCard`, called by `handleEnquiry`): the pipeline prices ONLY from the tenant's approved snapshot, re-hashed by the kernel against
+  both `content_hash` and the pinned `approved_hash`. No approved snapshot -> refusal `out_of_policy` / `card_not_approved`; stored snapshot altered -> `card_hash_mismatch`.
+  Both reply with the holding text, write a refusal ledger row without a card hash, and escalate. The card object a caller passes only names which card is meant (`id`).
+
+Ruling: template == JSON card, by hash. The banquet template compiles to a card whose kernel hash is identical to `rate-cards/fictional-banquet.json` (the compiler omits `core` when it is "no", exactly as the hand-written card does), and the same fixture quotes identically through both (`gate.test.ts`).
+Ruling: editing a source after approval has no effect until re-approved. A compile makes a new `draft` revision (`rate_cards.version` 1, 2, 3... per tenant+card; the card's own `version` field stays part of the hashed content); the active approved snapshot keeps quoting, with its own hash, until the new revision is approved, which supersedes the old one (one approved row per tenant+card is a unique partial index). Compiling identical content again returns the existing revision.
+Ruling: an unapproved or tampered card does not quote and does not fall back to anything: it refuses with a typed reason and escalates. Only the "are you a bot?" disclosure still works, because it prices nothing.
+Ruling: no bypass in production code. Hand-written JSON cards (fixtures, eval, adversarial, many tests) get their approval through `seedApprovedCard` (`src/ratecard/legacy.ts`), a setup-only helper that runs the SAME publish -> read-backs -> all-yes -> approve path as a seeded per-tenant owner. `handleEnquiry` no longer writes `rate_cards` and no longer takes `rateCardVersion`.
+Ruling: approval is a tenant-level event, so `ledger_entries.thread_id` is now nullable (migration 0008) and two entry types were added (`rate_card_approved`, `rate_card_rejected`); the hash chain handles a null thread like any other null field. `rate_cards` already had `tenant_id`, forced RLS and the policy (0004), so no new table; the app role may UPDATE only the decision columns (not `compiled` or `content_hash`).
+Ruling: read-back dates are solved from the card's conditions, starting 14 days after the injected `now`, and are stored with the revision, so the owner is asked about exactly what is later re-checked at submit time (each stored total is re-priced by the kernel first; a stale one aborts). Examples are chosen by a greedy rule-coverage pass, so the set is deterministic for a card and a clock, but it proves the owner saw each rule priced once, not that every tier edge is right.
+Ruling: not done here: Google Sheets itself is not wired (the template is the CSV export of the Sheet; PRD lists Sheets as an interface only); only the banquet has a template (the other four cards stay JSON); `pnpm card approve` simulates the owner's replies, there is no WhatsApp channel for it yet; template support covers the kernel's current rule language (`minimums` yes, `refusalSuggestion` / `offerAlternatives` via `meta.csv`).

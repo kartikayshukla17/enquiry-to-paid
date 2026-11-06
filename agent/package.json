@@ -10,7 +10,8 @@
     "eval": "tsx src/eval/cli.ts",
     "provider": "tsx src/provider/cli.ts",
     "adversarial": "tsx src/adversarial/cli.ts",
-    "ledger": "tsx src/ledger/cli.ts"
+    "ledger": "tsx src/ledger/cli.ts",
+    "card": "tsx src/ratecard/cli.ts"
   },
   "dependencies": {
     "better-auth": "^1.7.18",

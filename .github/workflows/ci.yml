@@ -51,4 +51,7 @@ jobs:
           pnpm sim run fixtures/banquet-01.json
           pnpm sim run fixtures/wedding-300-out-of-season.json
           pnpm sim two-tenants fixtures/two-tenants.json
+          pnpm sim run fixtures/card-template-banquet-01.json
+          pnpm sim run fixtures/card-unapproved-banquet-01.json
+          pnpm card compile rate-cards/templates/fictional-banquet-template
           pnpm ledger verify
