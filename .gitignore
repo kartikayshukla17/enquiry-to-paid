@@ -43,3 +43,7 @@ next-env.d.ts
 # private: contract reasoning, never commit
 COMPLIANCE-PRIVATE.md
 .impeccable/review/
+
+# rust kernel
+/kernel/target
+/kernel/dist
