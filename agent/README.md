@@ -1,5 +1,24 @@
 # agent
 
+## Eval harness (T7)
+
+Needs the local Postgres (a throwaway database is created and dropped) and `pnpm build:kernel` once. No network, no key.
+
+```sh
+pnpm eval                      # per-language table; writes agent/eval/RESULTS.md; writes the baseline if none exists
+pnpm eval --write-baseline     # replace agent/eval/baselines/<modelId>.<prompthash8>.json and RESULTS.md
+pnpm run eval -- --check       # CI: exit 1 on ANY drift from the committed baseline or RESULTS.md
+pnpm --filter agent exec tsx src/eval/seed.ts   # regenerate agent/eval/recordings/ from src/eval/recorded.ts
+```
+
+- Sets: `agent/eval/sets/en.jsonl`, `hinglish.jsonl` (Latin-script Hinglish plus Devanagari `lang: "hi"`), 37 fictional cases, each with gold fields and a gold outcome (quote | clarify | refuse + reason) against `rate-cards/fictional-banquet.json`. A test checks every gold outcome equals the kernel's answer for the gold fields.
+- Metrics per language: field-level exact-match accuracy, schema-valid rate, mean confidence (extraction alone); outcome accuracy, **unsafe quotes** (quote issued where gold says clarify/refuse), wrong-price quotes and missed quotes (full pipeline through `handleMessage`).
+- Output is byte-reproducible (no timestamps, integer basis points, fixed scenario clock).
+
+Ruling: results are labelled "measured on fictional data; recorded-fixture provider, not a live model". The recordings are hand-seeded (gold fields plus the listed injected mistakes in `src/eval/recorded.ts`), so the numbers check the harness and safety gates and are NOT model accuracy for any language; a real figure needs a live-model recording run.
+Ruling: the baseline is keyed by model ID + extraction prompt hash and also pins the set hashes and a hash of every recording; `--check` treats any difference (better or worse) as failure, so improvements are committed deliberately with `--write-baseline`.
+Ruling: bad numbers are published, not tuned away: `RESULTS.md` names every unsafe quote and miss. The kernel quotes past dates (e.g. a hallucinated 2026 date for "third of January"), which is one reason unsafe quotes occur; the confidence gate cannot catch a confidently wrong read.
+
 ## LLM extraction (T6)
 
 - `LlmProvider` (`src/llm/types.ts`): `extract` and `wordReply`. Implementations: `groq/` (OpenAI-compatible chat completions, JSON mode, injectable `fetch`) and `fixture/` (recordings keyed by `sha256(op, normalised input, prompt hash)` in `src/llm/fixtures/`).

@@ -37,7 +37,7 @@ describe("labelled eval sets", () => {
       }) as Outcome;
       const got = outcomeClass(out);
       expect(got.kind, c.id).toBe(c.outcome.kind);
-      expect(got.reason, c.id).toBe(c.outcome.reason);
+      expect(got.reason, c.id).toBe((c.outcome as { reason?: string }).reason);
     }
   });
 

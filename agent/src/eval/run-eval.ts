@@ -62,6 +62,7 @@ export interface LangMetrics {
 export interface CaseResult {
   id: string;
   lang: Lang;
+  text: string;
   schemaValid: boolean;
   confidenceBps: number | null;
   wrongFields: FieldName[];
@@ -208,6 +209,7 @@ export async function runEval(opts: EvalOptions): Promise<EvalReport> {
       r: {
         id: c.id,
         lang: c.lang,
+        text: c.text,
         schemaValid: ext.ok,
         confidenceBps: ext.ok ? ext.fields.confidenceBps : null,
         wrongFields,

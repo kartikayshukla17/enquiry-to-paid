@@ -42,8 +42,8 @@ jobs:
         run: pnpm lint
       - name: Tests (kernel build, agent, cargo)
         run: pnpm test
-      - name: Offline eval
-        run: pnpm run eval
+      - name: Offline eval (fixtures only; fails on any drift from the committed baseline or RESULTS.md)
+        run: pnpm run eval -- --check
       - name: Ledger verify (sim writes real chained rows, then the chain is walked)
         run: |
           pnpm sim run fixtures/banquet-01.json
