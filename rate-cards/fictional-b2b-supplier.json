@@ -1,0 +1,78 @@
+{
+  "comment": "FICTIONAL example rate card for tests and demos. Not a real company or real prices. Unit price by volume band (all-units pricing: the band the whole quantity falls in sets the unit price; each band's upTo is INCLUSIVE, so 499 units is in the lower band and 500 in the next). MOQ is per product with a card flag: steel-bolts refuses below its minimum, nylon-ties re-quotes at the minimum and says so. Small orders (up to 999 units) pay a flat handling fee. GST 18% as a tax line, half-up integer rounding. Coverage: bolts up to 50000 units, ties up to 200000; bigger orders have no covering rule.",
+  "currency": "INR",
+  "fictional": true,
+  "holdHours": 48,
+  "id": "fictional-b2b-supplier",
+  "label": "FICTIONAL: Brightline Fasteners sample rate card (unit price, MOQ, volume tiers, GST)",
+  "minimums": [
+    {
+      "ruleId": "moq-bolts",
+      "label": "Minimum order quantity (steel-bolts: 100)",
+      "field": "quantity",
+      "min": 100,
+      "below": "refuse",
+      "when": [{ "field": "service", "op": "eq", "value": "steel-bolts" }]
+    },
+    {
+      "ruleId": "moq-ties",
+      "label": "Minimum order quantity (nylon-ties: 500)",
+      "field": "quantity",
+      "min": 500,
+      "below": "raise_to_min",
+      "when": [{ "field": "service", "op": "eq", "value": "nylon-ties" }]
+    }
+  ],
+  "requiredFields": [
+    { "field": "service", "question": "Which product do you need: steel bolts or nylon ties?" },
+    { "field": "quantity", "question": "How many units do you need?" }
+  ],
+  "rules": [
+    {
+      "ruleId": "bolts-unit-price",
+      "core": true,
+      "label": "Steel bolts, unit price by volume band",
+      "when": [
+        { "field": "service", "op": "eq", "value": "steel-bolts" },
+        { "field": "quantity", "op": "range", "min": 1, "max": 50000 }
+      ],
+      "charge": {
+        "kind": "tiered_per_unit",
+        "field": "quantity",
+        "tiers": [
+          { "upTo": 499, "amount": 1200 },
+          { "upTo": 1999, "amount": 1050 },
+          { "upTo": 50000, "amount": 900 }
+        ]
+      }
+    },
+    {
+      "ruleId": "ties-unit-price",
+      "core": true,
+      "label": "Nylon ties, unit price by volume band",
+      "when": [
+        { "field": "service", "op": "eq", "value": "nylon-ties" },
+        { "field": "quantity", "op": "range", "min": 1, "max": 200000 }
+      ],
+      "charge": {
+        "kind": "tiered_per_unit",
+        "field": "quantity",
+        "tiers": [
+          { "upTo": 1999, "amount": 180 },
+          { "upTo": 9999, "amount": 150 },
+          { "upTo": 200000, "amount": 120 }
+        ]
+      }
+    },
+    {
+      "ruleId": "small-order-handling",
+      "label": "Packing and handling (orders up to 999 units)",
+      "when": [{ "field": "quantity", "op": "range", "min": 1, "max": 999 }],
+      "charge": { "kind": "flat", "amount": 50000 }
+    }
+  ],
+  "taxLines": [{ "ruleId": "gst-18", "label": "GST 18%", "rateBps": 1800 }],
+  "timezone": "Asia/Kolkata",
+  "validDays": 7,
+  "version": 1
+}
