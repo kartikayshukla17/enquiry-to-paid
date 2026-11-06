@@ -1,0 +1,19 @@
+{
+  "id": "two-tenants",
+  "comment": "FICTIONAL. The same enquiry is run under two tenants that hold different rate cards. customerRef is a made-up label, not a phone number.",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "+910000000042",
+  "availability": { "blockedDates": [] },
+  "message": "Hi, we want the hall on 12 December 2026 for about 120 guests. Could you share a quote?",
+  "extracted": {
+    "service": "banquet",
+    "date": "2026-12-12",
+    "guestCount": 120,
+    "language": "en",
+    "confidenceBps": 9200
+  },
+  "tenants": [
+    { "tenant": { "id": "tenant-rose-court", "name": "FICTIONAL: Rose Court Banquets" }, "rateCard": "rate-cards/fictional-banquet.json" },
+    { "tenant": { "id": "tenant-marigold-hall", "name": "FICTIONAL: Marigold Hall" }, "rateCard": "rate-cards/fictional-banquet-seasonal.json" }
+  ]
+}

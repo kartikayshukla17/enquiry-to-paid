@@ -9,7 +9,7 @@ import type { LedgerRow } from "../ledger/index.js";
 import { createLogNotifier, type Notifier } from "../escalation/index.js";
 import { handleEnquiry } from "../pipeline/handle-enquiry.js";
 
-const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
+export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const AGENT_ROOT = path.join(REPO_ROOT, "agent");
 
 interface Fixture {

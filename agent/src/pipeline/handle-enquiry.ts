@@ -1,10 +1,11 @@
-import { createHash } from "node:crypto";
 import type { Pool } from "pg";
 import type { KernelBridge } from "../kernel/index.js";
 import { KernelError, type Availability, type ExtractedFields, type Outcome } from "../kernel/types.js";
 import type { Notifier } from "../escalation/index.js";
 import { appendEntry, type LedgerRow } from "../ledger/index.js";
 import { renderReply } from "./reply.js";
+import { encryptPii, phoneHash, piiKeysFromEnv, type PiiKeys } from "../security/pii.js";
+import { withTenant } from "../tenancy/with-tenant.js";
 
 export interface EnquiryInput {
   tenant: { id: string; name: string };
@@ -39,26 +40,23 @@ export interface EnquiryResult {
   fields: ExtractedFields;
 }
 
-export const phoneHash = (ref: string) => createHash("sha256").update(`customer:${ref}`).digest("hex");
-
 /**
  * T1 tracer: typed fields -> kernel -> reply (numbers from kernel) -> ledger.
  * Free text (`message`) is stored in the ledger only; it never reaches the kernel.
  */
 export async function handleEnquiry(
-  deps: { pool: Pool; kernel: KernelBridge; notifier: Notifier },
+  deps: { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys },
   e: EnquiryInput,
 ): Promise<EnquiryResult> {
   const cardHash = deps.kernel.rateCardHash(e.rateCard);
-
-  const client = await deps.pool.connect();
-  try {
-    await client.query("BEGIN");
+  const pii = deps.pii ?? piiKeysFromEnv();
+  // Everything below runs as the unprivileged app role with app.tenant_id set (RLS applies).
+  const { outcome, reply, ledgerRow, fields, clarifying } = await withTenant(deps.pool, e.tenant.id, async (client) => {
     await client.query("INSERT INTO tenants (id, name) VALUES ($1,$2) ON CONFLICT (id) DO NOTHING", [e.tenant.id, e.tenant.name]);
     const customerId = `${e.tenant.id}:cust:${e.customerRef}`;
     await client.query(
-      `INSERT INTO customers (id, tenant_id, phone_hash, language) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`,
-      [customerId, e.tenant.id, phoneHash(e.customerRef), e.fields.language ?? null],
+      `INSERT INTO customers (id, tenant_id, phone_hash, phone_enc, language) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING`,
+      [customerId, e.tenant.id, phoneHash(pii, e.customerRef), encryptPii(pii, e.customerRef), e.fields.language ?? null],
     );
     await client.query(
       `INSERT INTO threads (id, tenant_id, customer_id) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING`,
@@ -100,23 +98,18 @@ export async function handleEnquiry(
     // A clarifying question keeps the thread open; the follow-up message completes it.
     const state = outcome.kind === "quote" ? "quoted" : clarifying ? "open" : "refused";
     await client.query("UPDATE threads SET state = $2, fields = $3::jsonb WHERE id = $1", [e.threadId, state, JSON.stringify(fields)]);
-    await client.query("COMMIT");
-    // After commit: the refusal is durable before anyone is told about it.
-    if (outcome.kind === "refusal" && !clarifying) {
-      await deps.notifier.notify({
-        tenantId: e.tenant.id,
-        threadId: e.threadId,
-        at: e.now,
-        reason: outcome.reason,
-        ...(outcome.ruleGap !== undefined && { ruleGap: outcome.ruleGap }),
-        fields,
-      });
-    }
-    return { reply, outcome, ledgerRow, fields };
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
+    return { outcome, reply, ledgerRow, fields, clarifying };
+  });
+  // After commit: the refusal is durable before anyone is told about it.
+  if (outcome.kind === "refusal" && !clarifying) {
+    await deps.notifier.notify({
+      tenantId: e.tenant.id,
+      threadId: e.threadId,
+      at: e.now,
+      reason: outcome.reason,
+      ...(outcome.ruleGap !== undefined && { ruleGap: outcome.ruleGap }),
+      fields,
+    });
   }
+  return { reply, outcome, ledgerRow, fields };
 }
