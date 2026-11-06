@@ -12,14 +12,24 @@ interface KernelExports {
   dealloc(ptr: number, len: number): void;
   evaluate_json(ptr: number, len: number): number;
   rate_card_hash_json(ptr: number, len: number): number;
+  chain_hash_json(ptr: number, len: number): number;
+  verify_chain_json(ptr: number, len: number): number;
   result_len(): number;
 }
+
+export type ChainVerdict =
+  | { ok: true; count: number }
+  | { ok: false; brokenSeq: number | null; reason: "seq_gap" | "prev_hash_mismatch" | "hash_mismatch" };
 
 export interface KernelBridge {
   /** JSON in, JSON out. Errors from the kernel are returned as typed values. */
   evaluate(input: unknown): unknown;
   /** SHA-256 hex of the canonical card JSON, computed in Rust. */
   rateCardHash(card: unknown): string;
+  /** Ledger chain hash of one entry's content fields (incl. prevHash), computed in Rust. */
+  chainHash(entry: unknown): string;
+  /** Verifies ONE tenant's ordered entries; reports the first broken row. */
+  verifyChain(entries: unknown[]): ChainVerdict;
 }
 
 export async function loadKernel(wasmPath: string = DEFAULT_WASM): Promise<KernelBridge> {
@@ -50,5 +60,8 @@ export async function loadKernel(wasmPath: string = DEFAULT_WASM): Promise<Kerne
     evaluate: (input) =>
       JSON.parse(call((p, l) => k.evaluate_json(p, l), JSON.stringify(input))) as unknown,
     rateCardHash: (card) => call((p, l) => k.rate_card_hash_json(p, l), JSON.stringify(card)),
+    chainHash: (entry) => call((p, l) => k.chain_hash_json(p, l), JSON.stringify(entry)),
+    verifyChain: (entries) =>
+      JSON.parse(call((p, l) => k.verify_chain_json(p, l), JSON.stringify(entries))) as ChainVerdict,
   };
 }

@@ -2,6 +2,7 @@
 //! No clocks, no I/O, no free text, no floats.
 
 mod card;
+mod chain;
 mod date;
 mod eval;
 
@@ -18,6 +19,22 @@ pub fn rate_card_hash(card_json: &str) -> Result<String, String> {
     let canonical = serde_json::to_string(&v).map_err(|_| err("invalid_input"))?;
     let digest = Sha256::digest(canonical.as_bytes());
     Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// Hash for one ledger entry (content fields incl. prevHash), or a typed error.
+pub fn chain_hash(entry_json: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(entry_json)
+        .ok()
+        .and_then(|v| chain::chain_hash(&v))
+        .unwrap_or_else(|| err("invalid_input"))
+}
+
+/// One tenant's ordered entries in, `{ok:true,count}` or `{ok:false,brokenSeq,reason}` out.
+pub fn verify_chain(entries_json: &str) -> String {
+    match serde_json::from_str::<serde_json::Value>(entries_json) {
+        Ok(v) => chain::verify_chain(&v).to_string(),
+        Err(_) => err("invalid_input"),
+    }
 }
 
 /// `{rateCard, fields, availability, now}` -> `{kind:"quote"|"refusal",...}`.
@@ -78,6 +95,20 @@ pub unsafe extern "C" fn evaluate_json(ptr: *const u8, len: usize) -> *mut u8 {
 #[no_mangle]
 pub unsafe extern "C" fn rate_card_hash_json(ptr: *const u8, len: usize) -> *mut u8 {
     export(ptr, len, |s| rate_card_hash(s).unwrap_or_else(|e| e))
+}
+
+/// # Safety
+/// Same contract as `evaluate_json`.
+#[no_mangle]
+pub unsafe extern "C" fn chain_hash_json(ptr: *const u8, len: usize) -> *mut u8 {
+    export(ptr, len, chain_hash)
+}
+
+/// # Safety
+/// Same contract as `evaluate_json`.
+#[no_mangle]
+pub unsafe extern "C" fn verify_chain_json(ptr: *const u8, len: usize) -> *mut u8 {
+    export(ptr, len, verify_chain)
 }
 
 unsafe fn export(ptr: *const u8, len: usize, f: impl Fn(&str) -> String) -> *mut u8 {
