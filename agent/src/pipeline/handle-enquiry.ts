@@ -16,7 +16,19 @@ export interface EnquiryInput {
   availability: Availability;
   message: string;
   fields: ExtractedFields;
+  /** Model/provider/region/cost of the LLM calls behind this outcome (T6 supplies real values). */
+  provenance?: Provenance;
 }
+
+export interface Provenance {
+  modelId: string;
+  provider: string;
+  region: string;
+  costMinor: number;
+}
+
+/** Fixture mode: no LLM was called, so the cost is honestly zero. */
+export const FIXTURE_PROVENANCE: Provenance = { modelId: "fixture", provider: "fixture", region: "local", costMinor: 0 };
 
 export interface EnquiryResult {
   reply: string;
@@ -65,13 +77,14 @@ export async function handleEnquiry(
       [`${e.tenant.id}:${cardId}:${e.rateCardVersion}`, e.tenant.id, cardId, e.rateCardVersion, cardHash, JSON.stringify(e.rateCard)],
     );
     const base = { tenantId: e.tenant.id, threadId: e.threadId, at: e.now };
-    await appendEntry(client, { ...base, type: "enquiry", payload: { text: e.message } });
-    await appendEntry(client, { ...base, type: "extraction", payload: { fields: e.fields } });
-    const ledgerRow = await appendEntry(client, {
+    await appendEntry(client, deps.kernel, { ...base, type: "enquiry", payload: { text: e.message } });
+    await appendEntry(client, deps.kernel, { ...base, type: "extraction", payload: { fields: e.fields } });
+    const ledgerRow = await appendEntry(client, deps.kernel, {
       ...base,
       type: outcome.kind,
       payload: outcome,
       rateCardHash: cardHash,
+      ...(e.provenance ?? FIXTURE_PROVENANCE),
     });
     await client.query("UPDATE threads SET state = $2 WHERE id = $1", [e.threadId, outcome.kind === "quote" ? "quoted" : "refused"]);
     await client.query("COMMIT");

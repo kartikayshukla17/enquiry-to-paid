@@ -39,5 +39,8 @@ jobs:
         run: pnpm test
       - name: Offline eval
         run: pnpm run eval
-      - name: Ledger verify
-        run: pnpm ledger verify
+      - name: Ledger verify (sim writes real chained rows, then the chain is walked)
+        run: |
+          pnpm sim run fixtures/banquet-01.json
+          pnpm sim run fixtures/wedding-300-out-of-season.json
+          pnpm ledger verify

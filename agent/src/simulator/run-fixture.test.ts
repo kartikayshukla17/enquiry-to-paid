@@ -85,7 +85,8 @@ describe("runFixture (the seam behind `pnpm sim run`)", () => {
       JSON.stringify({
         reply: r.reply,
         quote: r.quote,
-        row: { ...r.ledgerRow, seq: 0 },
+        // position in the chain (seq, tenantSeq, prevHash, hash) legitimately differs per run
+        row: { ...r.ledgerRow, seq: 0, tenantSeq: 0, prevHash: "", hash: "" },
       });
     const first = strip(await runFixture(FIXTURE, { pool: db.pool }));
     for (let i = 0; i < 100; i++) {
