@@ -100,7 +100,7 @@ describe("runEval (the function behind `pnpm eval`)", () => {
 
   describe("per rate card (the card dimension)", () => {
     it("reports one engine over every card that has labelled cases, in a fixed order", () => {
-      expect(Object.keys(report.cards)).toEqual(["fictional-banquet", "fictional-photographer", "fictional-b2b-supplier"]);
+      expect(Object.keys(report.cards)).toEqual(["fictional-banquet", "fictional-banquet-seasonal", "fictional-photographer", "fictional-b2b-supplier", "fictional-contractor"]);
       expect(report.provenance.rateCards.map((c) => c.id)).toEqual(Object.keys(report.cards));
       for (const c of report.provenance.rateCards) expect(c.hash).toMatch(/^[0-9a-f]{64}$/);
       expect(Object.values(report.cards).reduce((n, c) => n + c.cases, 0)).toBe(report.overall.cases);
@@ -142,6 +142,52 @@ describe("runEval (the function behind `pnpm eval`)", () => {
         expect(m.outOfCoverageQuotes, id).toBe(0);
         expect(m.outOfCoverageCaseIds, id).toEqual([]);
       }
+    });
+  });
+
+  // PRD section 2, Generality: "one engine prices all three fictional rate cards (banquet, photographer, B2B supplier)
+  // and mostly refuses on the fourth (contractor)". The same kernel and pipeline read every card; only the card differs.
+  describe("generality metric", () => {
+    const priced = ["fictional-banquet", "fictional-banquet-seasonal", "fictional-photographer", "fictional-b2b-supplier"];
+
+    it("prices the banquet (plus seasonal), photographer and B2B cards: each refuses under half of its cases", () => {
+      for (const id of priced) {
+        const m = report.cards[id]!;
+        expect(m.quotes, id).toBeGreaterThan(0);
+        expect(m.refusalShareBps, id).toBeLessThan(5000);
+        expect(m.goldRefusalShareBps, id).toBeLessThan(5000);
+      }
+    });
+
+    it("mostly refuses on the contractor card, by the labels and in what the pipeline produced", () => {
+      const m = report.cards["fictional-contractor"]!;
+      expect(m.cases).toBeGreaterThanOrEqual(12);
+      expect(m.goldRefusalShareBps).toBeGreaterThan(5000);
+      expect(m.refusalShareBps).toBeGreaterThan(5000);
+      expect(m.refusals).toBeGreaterThan(m.quotes + m.clarifications);
+      expect(m.quotes).toBeGreaterThan(0); // it still prices the narrow cases it covers
+    });
+
+    it("issues zero out-of-coverage quotes on every card, and none of the contractor's refusals is a quote in disguise", () => {
+      for (const [id, m] of Object.entries(report.cards)) expect(m.outOfCoverageQuotes, id).toBe(0);
+      const refused = report.cases.filter((c) => c.card === "fictional-contractor" && c.gold === "refuse:no_covering_rule");
+      expect(refused.length).toBeGreaterThanOrEqual(8);
+      for (const c of refused) expect(c.got, c.id).not.toBe("quote");
+    });
+
+    it("reports the refusal share per card as integer basis points", () => {
+      for (const [id, m] of Object.entries(report.cards)) {
+        expect(Number.isInteger(m.refusalShareBps), id).toBe(true);
+        expect(m.refusalShareBps, id).toBe(Math.round((m.refusals * 10_000) / m.cases));
+      }
+    });
+
+    it("every no-covering-rule refusal on a card that names a next step escalated with that suggestion; other cards carry none", () => {
+      const ct = report.cards["fictional-contractor"]!;
+      const noCover = report.cases.filter((c) => c.card === "fictional-contractor" && c.got === "refuse:no_covering_rule").length;
+      expect(noCover).toBeGreaterThanOrEqual(8);
+      expect(ct.suggestedEscalations).toBe(noCover);
+      for (const id of priced) expect(report.cards[id]!.suggestedEscalations, id).toBe(0);
     });
   });
 });

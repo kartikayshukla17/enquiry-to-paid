@@ -44,7 +44,7 @@ describe("pnpm eval", () => {
     const baseline = JSON.parse(await readFile(await baselinePath(), "utf8"));
     expect(baseline.provenance.label).toBe("measured on fictional data; recorded-fixture provider, not a live model");
     expect(Object.keys(baseline.languages)).toEqual(["en", "hinglish", "hi"]);
-    expect(Object.keys(baseline.inputs.setHashes).sort()).toEqual(["b2b.jsonl", "en.jsonl", "hinglish.jsonl", "photographer.jsonl"]);
+    expect(Object.keys(baseline.inputs.setHashes).sort()).toEqual(["b2b.jsonl", "contractor.jsonl", "en.jsonl", "hinglish.jsonl", "photographer.jsonl", "seasonal.jsonl"]);
 
     const md = await readFile(paths.resultsPath!, "utf8");
     expect(md).toContain("measured on fictional data; recorded-fixture provider, not a live model");

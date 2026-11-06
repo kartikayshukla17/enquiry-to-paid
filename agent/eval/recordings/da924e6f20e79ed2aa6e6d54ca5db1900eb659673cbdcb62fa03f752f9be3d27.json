@@ -1,0 +1,25 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Need a new door lock fitted at my flat in Greater Noida West.",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "door-lock-fit",
+      "locality": "greater-noida-west",
+      "quantity": 1,
+      "language": "en",
+      "confidenceBps": 9000,
+      "intent": "enquiry"
+    }
+  }
+}

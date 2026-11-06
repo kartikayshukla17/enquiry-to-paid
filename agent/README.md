@@ -1,5 +1,27 @@
 # agent
 
+## Fourth vertical: contractor card, refusal-heavy (T13) and the Generality metric
+
+Needs the local Postgres and `pnpm build:kernel` once (the kernel gained the card field `refusalSuggestion`). No network.
+
+```sh
+pnpm sim run fixtures/contractor-01-quote.json         # a narrow covered repair: quoted
+pnpm sim run fixtures/contractor-02-renovation.json    # bathroom remodel: no_covering_rule + book_site_visit, escalation carries it
+pnpm sim run fixtures/contractor-03-other-locality.json # covered job, locality not on the list: refused
+pnpm sim run fixtures/contractor-04-over-size-cap.json # six taps, cap is three: refused
+pnpm sim run fixtures/contractor-05-missing-field.json # a question, not a refusal: no suggestion
+pnpm --filter agent exec tsx src/eval/cli.ts            # all five cards; per-card refusal share in the console and RESULTS.md
+```
+
+- Card: `rate-cards/fictional-contractor.json` (FICTIONAL). It quotes only three fixed-price small repairs, 1-3 items, in two listed localities; everything else (renovation, waterproofing, painting, rewiring, other localities, bigger counts) falls out as `no_covering_rule`.
+- Generic card fields `refusalSuggestion` (a short code, here `book_site_visit`; the kernel validates it as `[a-z][a-z0-9_]*`, at most 64 chars, so prose cannot ride along) and `refusalSuggestionReply` (the customer-facing wording, written by the card owner). The kernel echoes the code on `no_covering_rule` refusals only, so it is a ledger fact on the refusal row; the escalation event carries `suggestion` (and the log line `suggestion=book_site_visit`); the holding reply is the usual generic text followed by the card's template verbatim. A card with no such field behaves exactly as before. The template is dropped if it contains a digit, so a holding reply can never state a number.
+- Eval: 14 contractor enquiries (7 English, 7 Hinglish; 9 gold refusals, 4 quotes, 1 clarifying question) in `agent/eval/sets/contractor.jsonl`, plus 7 seasonal-banquet cases (`seasonal.jsonl`) so the harness runs all five card files: banquet, seasonal banquet, photographer, B2B supplier, contractor. `RESULTS.md` and the console print, per card: quotes, refusals, clarifying questions, refusal share (integer bps), gold refusal share, out-of-coverage quotes (must be 0) and how many no-covering-rule refusals escalated with a suggested next step.
+- Generality metric (PRD section 2), asserted in `src/eval/run-eval.test.ts` on the report: banquet, seasonal banquet, photographer and B2B each refuse under half of their cases and quote at least one (by the labels and by what the pipeline did); the contractor card refuses a majority (64.3% of its cases; 8 of its 9 refusals are no-covering-rule, each with the site-visit suggestion); out-of-coverage quotes are 0 on every card.
+
+Ruling: "zero out-of-coverage quotes" is asserted on the recorded reads. The kernel guarantee is stronger and separate (given fields outside every core rule, it cannot return a quote: `card_contractor.rs`, the US4 property test); the eval number additionally depends on the hand-seeded mistakes, and none of them was chosen to push an out-of-coverage case into coverage.
+Ruling: banquet's refusal share (48.6%) is close to the 50% line because 18 of its 37 cases are refusals, most by label (out-of-season/size/date) and a few from deliberate extraction failures. It is published as it is, and the generality test holds the line at under 50% on both the labels and the outcomes.
+Ruling: the suggestion only attaches to `no_covering_rule`. A missing field is a question, a discount request goes to the owner, a low-confidence read is not a coverage fact, and none of those should push a site visit.
+
 ## Third vertical: B2B supplier card (T12)
 
 Needs the local Postgres and `pnpm build:kernel` once (the kernel gained `tiered_per_unit` and card `minimums`). No network.

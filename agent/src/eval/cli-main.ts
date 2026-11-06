@@ -45,7 +45,7 @@ export function renderTable(r: EvalReport): string {
 
 /** Per-card console table: how much of each card's traffic was priced versus refused. */
 export function renderCardTable(r: EvalReport): string {
-  const cols = ["card", "n", "quotes", "refusals", "clarify", "refusal share", "out-of-coverage quotes", "outcome acc"];
+  const cols = ["card", "n", "quotes", "refusals", "clarify", "refusal share", "out-of-coverage quotes", "suggested", "outcome acc"];
   const rows = [
     cols,
     ...Object.entries(r.cards).map(([id, c]) => [
@@ -56,6 +56,7 @@ export function renderCardTable(r: EvalReport): string {
       String(c.clarifications),
       pct(c.refusalShareBps),
       String(c.outOfCoverageQuotes),
+      `${c.suggestedEscalations}/${c.noCoveringRuleRefusals}`,
       pct(c.pipeline.outcomeAccuracyBps),
     ]),
   ];

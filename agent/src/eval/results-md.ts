@@ -75,10 +75,10 @@ Why these happen: in each unsafe case the recorded model invents or misreads a f
   };
   sections.push(`## Results per rate card (generality)
 
-One engine, no per-card code: every row below is the same kernel and pipeline reading a different card file. "Refusal share" is the share of the card's cases that ended in a typed refusal (clarifying questions are not refusals). "Out-of-coverage quotes" counts quotes issued where the labels say the card has no covering rule; it must be 0 on every card.
+One engine, no per-card code: every row below is the same kernel and pipeline reading a different card file. "Refusal share" is the share of the card's cases that ended in a typed refusal (clarifying questions are not refusals). "Out-of-coverage quotes" counts quotes issued where the labels say the card has no covering rule; it must be 0 on every card. "Suggested next step" counts the \`no_covering_rule\` refusals whose escalation carried the card's own \`refusalSuggestion\` (only a card that names one has any).
 
 ${table(
-    ["Card", "Cases", "Quotes", "Refusals", "Clarifying questions", "Refusal share", "Gold refusal share", "Out-of-coverage quotes", "Outcome accuracy", "Unsafe quotes"],
+    ["Card", "Cases", "Quotes", "Refusals", "Clarifying questions", "Refusal share", "Gold refusal share", "Out-of-coverage quotes", "No-rule refusals with a suggested next step", "Outcome accuracy", "Unsafe quotes"],
     cardRows.map(([id, c]) => [
       `\`${id}\``,
       String(c.cases),
@@ -88,6 +88,7 @@ ${table(
       pct(c.refusalShareBps),
       pct(c.goldRefusalShareBps),
       `**${c.outOfCoverageQuotes}**`,
+      `${c.suggestedEscalations}/${c.noCoveringRuleRefusals}`,
       `${pct(c.pipeline.outcomeAccuracyBps)} (${c.pipeline.outcomeCorrect}/${c.cases})`,
       `**${c.pipeline.unsafeQuotes}**`,
     ]),

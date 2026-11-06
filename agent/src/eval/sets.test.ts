@@ -51,6 +51,23 @@ describe("labelled eval sets", () => {
     expect(ph.some((c) => c.outcome.kind === "refuse" && c.outcome.reason === "no_covering_rule")).toBe(true);
   });
 
+  it("labels 12+ contractor enquiries, English and Hinglish, where the majority are gold refusals with no covering rule", async () => {
+    const { cases } = await loadSets();
+    const ct = cases.filter((c) => cardOf(c) === "fictional-contractor");
+    expect(ct.length).toBeGreaterThanOrEqual(12);
+    expect(new Set(ct.map((c) => c.lang))).toEqual(new Set(["en", "hinglish"]));
+    const refusals = ct.filter((c) => c.outcome.kind === "refuse" && c.outcome.reason === "no_covering_rule");
+    expect(refusals.length * 2).toBeGreaterThan(ct.length);
+    expect(ct.some((c) => c.outcome.kind === "quote")).toBe(true);
+  });
+
+  it("covers all five cards: banquet, seasonal banquet, photographer, B2B supplier and contractor", async () => {
+    const { cases } = await loadSets();
+    expect([...new Set(cases.map(cardOf))].sort()).toEqual(
+      ["fictional-b2b-supplier", "fictional-banquet", "fictional-banquet-seasonal", "fictional-contractor", "fictional-photographer"],
+    );
+  });
+
   it("includes deliberately hard cases (ambiguous dates, code-switched numbers)", async () => {
     const { cases } = await loadSets();
     const text = cases.map((c) => c.text).join("\n");

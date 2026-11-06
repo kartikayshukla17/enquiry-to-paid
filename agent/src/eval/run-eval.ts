@@ -79,6 +79,9 @@ export interface CardMetrics extends LangMetrics {
   /** Quotes issued where gold says refuse:no_covering_rule. The number that must be 0 for every card. */
   outOfCoverageQuotes: number;
   outOfCoverageCaseIds: string[];
+  /** Refusals with reason no_covering_rule, and how many of their escalations carried the card's suggested next step. */
+  noCoveringRuleRefusals: number;
+  suggestedEscalations: number;
 }
 
 export interface CaseResult {
@@ -218,13 +221,14 @@ export async function runEval(opts: EvalOptions): Promise<EvalReport> {
     }) as Outcome;
   };
 
-  const results: { c: EvalCase; r: CaseResult; confidence: number | null }[] = [];
+  const results: { c: EvalCase; r: CaseResult; confidence: number | null; suggested: boolean }[] = [];
   for (const c of cases) {
     const rateCard = rateCards.get(cardOf(c));
     // (a) extraction alone
     const ext = await extractFields(llm, c.text);
     const wrongFields = scoredFields(c).filter((f) => !ext.ok || (ext.fields[f] ?? null) !== (c.gold[f] ?? null));
     // (b) full pipeline
+    const eventsBefore = events.length;
     const res = await handleMessage(
       { pool: opts.pool, kernel, notifier, llm, lowConfidenceBps: DEFAULT_LOW_CONFIDENCE_BPS },
       {
@@ -247,6 +251,7 @@ export async function runEval(opts: EvalOptions): Promise<EvalReport> {
       res.outcome.kind === "quote" && goldOut.kind === "quote" && (res.outcome as Quote).total !== (goldOut as Quote).total;
     results.push({
       c,
+      suggested: events.slice(eventsBefore).some((e) => e.suggestion !== undefined),
       confidence: ext.ok ? ext.fields.confidenceBps : null,
       r: {
         id: c.id,
@@ -290,6 +295,8 @@ export async function runEval(opts: EvalOptions): Promise<EvalReport> {
         goldRefusalShareBps: bps(goldRefusals, rows.length),
         outOfCoverageQuotes: outOfCoverage.length,
         outOfCoverageCaseIds: outOfCoverage,
+        noCoveringRuleRefusals: got.filter((g) => g === "refuse:no_covering_rule").length,
+        suggestedEscalations: rows.filter((x) => x.suggested).length,
       };
       return [id, m];
     }),

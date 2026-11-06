@@ -1,0 +1,25 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Ek switch replace karwana hai, Sector 62 Noida mein.",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "switch-replacement",
+      "locality": "noida-sector-62",
+      "quantity": 1,
+      "language": "hinglish",
+      "confidenceBps": 9000,
+      "intent": "enquiry"
+    }
+  }
+}

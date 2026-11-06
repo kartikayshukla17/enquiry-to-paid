@@ -111,6 +111,14 @@ export const MISTAKES: Record<string, { why: string; response: RawResponse }> = 
     why: "guesses a product from a vague message but is unsure (below the confidence gate)",
     response: { service: "steel-bolts", language: "hinglish", confidenceBps: 5200 },
   },
+  "ct-en-02": {
+    why: "reads 'two switches' as three (a plausible slip; still inside the size cap, so it prices wrongly)",
+    response: { service: "switch-replacement", locality: "gaur-city", quantity: 3, language: "en", confidenceBps: 8800 },
+  },
+  "ct-hg-03": {
+    why: "is unsure whether 'false ceiling' is one of the card's jobs (below the confidence gate)",
+    response: { service: "false-ceiling", locality: "gaur-city", quantity: 2, language: "hinglish", confidenceBps: 6100 },
+  },
 };
 
 /** The raw JSON the scripted model returns for a case. */

@@ -1,0 +1,25 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Banquet booking for 16 December 2026, 60 guests, corporate dinner.",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": "2026-12-16",
+      "guestCount": 60,
+      "language": "en",
+      "confidenceBps": 9000,
+      "intent": "enquiry"
+    }
+  }
+}
