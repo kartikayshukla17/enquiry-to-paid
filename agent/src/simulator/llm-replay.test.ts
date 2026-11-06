@@ -27,7 +27,7 @@ describe("pnpm sim run on free-text fixtures (offline replay)", () => {
     expect((r.quote as Quote).total).toBe(56_640_000);
     expect(r.reply).toContain("₹5,66,400");
     expect(events).toEqual([]);
-    const rows = await types(r.ledgerRow.threadId);
+    const rows = await types(r.ledgerRow.threadId as string);
     expect(rows.map((x) => x.type)).toEqual(["enquiry", "extraction", "quote"]);
     expect(rows.every((x) => x.provider === "fixture" && x.region === "local" && x.cost === 0)).toBe(true);
   });
@@ -58,7 +58,7 @@ describe("pnpm sim run on free-text fixtures (offline replay)", () => {
     expect(r.quote).toMatchObject({ kind: "refusal", reason: "low_confidence", ruleGap: "extraction_schema_invalid" });
     expect(r.reply).not.toMatch(/\d|₹/);
     expect(events).toHaveLength(1);
-    const rows = await types(r.ledgerRow.threadId);
+    const rows = await types(r.ledgerRow.threadId as string);
     expect(rows.some((x) => x.type === "quote")).toBe(false);
   });
 

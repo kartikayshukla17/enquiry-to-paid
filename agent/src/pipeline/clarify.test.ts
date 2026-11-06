@@ -34,7 +34,7 @@ describe("missing information: ask, then quote", () => {
     expect(r.reply).not.toMatch(/guests|locality|Noida/i);
     expect(events).toEqual([]); // a question is not an escalation
     expect(r.ledgerRow.type).toBe("refusal");
-    const t = await threadRow(db.pool, r.ledgerRow.threadId);
+    const t = await threadRow(db.pool, r.ledgerRow.threadId as string);
     expect(t.state).toBe("open");
     expect(t.fields).toMatchObject({ service: "banquet", guestCount: 80 });
   });
@@ -49,7 +49,7 @@ describe("missing information: ask, then quote", () => {
 
     const poolB = new pg.Pool({ connectionString: url });
     const second = await runFixture("fixtures/banquet-02-two-step.json", { pool: poolB, only: 1 });
-    const t = await threadRow(poolB, second.ledgerRow.threadId);
+    const t = await threadRow(poolB, second.ledgerRow.threadId as string);
     await poolB.end();
 
     expect(second.quote.kind).toBe("quote");

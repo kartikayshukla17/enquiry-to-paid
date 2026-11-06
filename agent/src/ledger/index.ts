@@ -3,7 +3,8 @@ import type { KernelBridge } from "../kernel/index.js";
 
 export type LedgerType =
   | "enquiry" | "extraction" | "quote" | "refusal" | "hold" | "owner_message"
-  | "payment_link" | "collected" | "chase" | "correction" | "disclosure";
+  | "payment_link" | "collected" | "chase" | "correction" | "disclosure"
+  | "rate_card_approved" | "rate_card_rejected";
 
 export interface LedgerRow {
   /** Global row id (primary key); what `corrects` points at. */
@@ -11,7 +12,7 @@ export interface LedgerRow {
   tenantId: string;
   /** Position in this tenant's hash chain, starting at 1. */
   tenantSeq: number;
-  threadId: string;
+  threadId: string | null;
   at: string;
   type: LedgerType;
   payload: unknown;
@@ -27,7 +28,7 @@ export interface LedgerRow {
 
 export interface NewEntry {
   tenantId: string;
-  threadId: string;
+  threadId: string | null;
   at: string;
   type: Exclude<LedgerType, "correction">;
   payload: unknown;
@@ -44,7 +45,7 @@ const COLUMNS = `seq::int AS seq, tenant_id, tenant_seq::int AS tenant_seq, thre
   rate_card_hash, model_id, provider, region, cost_minor::int AS cost_minor, prev_hash, hash, corrects::int AS corrects`;
 
 interface DbRow {
-  seq: number; tenant_id: string; tenant_seq: number; thread_id: string; at: Date; type: LedgerType;
+  seq: number; tenant_id: string; tenant_seq: number; thread_id: string | null; at: Date; type: LedgerType;
   payload: unknown; rate_card_hash: string | null; model_id: string | null; provider: string | null;
   region: string | null; cost_minor: number | null; prev_hash: string; hash: string; corrects: number | null;
 }
@@ -154,7 +155,7 @@ export async function appendCorrection(
   payload: unknown,
   at: string,
 ): Promise<LedgerRow> {
-  const { rows } = await client.query<{ tenant_id: string; thread_id: string }>(
+  const { rows } = await client.query<{ tenant_id: string; thread_id: string | null }>(
     "SELECT tenant_id, thread_id FROM ledger_entries WHERE seq=$1",
     [entryRef.seq],
   );
