@@ -47,3 +47,6 @@ COMPLIANCE-PRIVATE.md
 # rust kernel
 /kernel/target
 /kernel/dist
+
+# workspace packages
+node_modules/
