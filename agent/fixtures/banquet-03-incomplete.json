@@ -1,0 +1,15 @@
+{
+  "id": "banquet-03-incomplete",
+  "comment": "FICTIONAL one-message enquiry with no date. locality is extracted but the card does not require it, so it is never asked about. customerRef is a made-up label, not a phone number.",
+  "tenant": { "id": "tenant-rose-court", "name": "FICTIONAL: Rose Court Banquets" },
+  "rateCard": "rate-cards/fictional-banquet.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-004",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "Hello, we want to book your hall in Greater Noida West for about 80 guests. Please share a quote.",
+      "extracted": { "service": "banquet", "guestCount": 80, "locality": "greater-noida-west", "language": "en", "confidenceBps": 9000 }
+    }
+  ]
+}

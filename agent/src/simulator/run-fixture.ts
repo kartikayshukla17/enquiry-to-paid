@@ -19,8 +19,11 @@ interface Fixture {
   now: string;
   customerRef: string;
   availability: Availability;
-  conversation: { from: string; text: string }[];
-  extracted: ExtractedFields;
+  /** Single-message form (T1). */
+  conversation?: { from: string; text: string }[];
+  extracted?: ExtractedFields;
+  /** Multi-message form (T3): per-message fixture-extracted fields, merged over earlier ones by the thread. */
+  messages?: { text: string; extracted: Partial<ExtractedFields> }[];
 }
 
 export interface RunResult {
@@ -28,6 +31,8 @@ export interface RunResult {
   quote: Outcome;
   fields: ExtractedFields & { date: string; guestCount: number };
   ledgerRow: LedgerRow;
+  /** One entry per message processed, in order (the top-level fields describe the last). */
+  turns: Omit<RunResult, "turns">[];
 }
 
 export interface RunOptions {
@@ -37,6 +42,8 @@ export interface RunOptions {
   notifier?: Notifier;
   /** Test hook: replace some extracted fields (still typed). */
   overrideFields?: Partial<ExtractedFields>;
+  /** Process only the message at this index (0-based); lets a test use a fresh connection per message. */
+  only?: number;
 }
 
 /** Resolves a fixture path against cwd, agent/, then the invoking directory. */
@@ -53,23 +60,37 @@ export function resolveFixture(p: string): string {
 export async function runFixture(fixturePath: string, opts: RunOptions): Promise<RunResult> {
   const fx = JSON.parse(await readFile(resolveFixture(fixturePath), "utf8")) as Fixture;
   const rateCard: unknown = JSON.parse(await readFile(path.join(REPO_ROOT, fx.rateCard), "utf8"));
-  const fields = { ...fx.extracted, ...opts.overrideFields };
   const kernel = opts.kernel ?? (await loadKernel());
-  const message = fx.conversation.filter((m) => m.from === "customer").map((m) => m.text).join("\n");
+  const messages =
+    fx.messages ??
+    [
+      {
+        text: (fx.conversation ?? []).filter((m) => m.from === "customer").map((m) => m.text).join("\n"),
+        extracted: fx.extracted ?? {},
+      },
+    ];
+  const selected = opts.only === undefined ? messages : [messages[opts.only]].filter((m) => m !== undefined);
+  if (selected.length === 0) throw new Error(`fixture ${fx.id} has no message ${opts.only}`);
 
-  const res = await handleEnquiry(
-    { pool: opts.pool, kernel, notifier: opts.notifier ?? createLogNotifier() },
-    {
-      tenant: fx.tenant,
-      threadId: `${fx.tenant.id}:thread:${fx.id}`,
-      customerRef: fx.customerRef,
-      rateCard,
-      rateCardVersion: (rateCard as { version: number }).version,
-      now: fx.now,
-      availability: fx.availability,
-      message,
-      fields,
-    },
-  );
-  return { reply: res.reply, quote: res.outcome, fields: fields as RunResult["fields"], ledgerRow: res.ledgerRow };
+  const turns: RunResult["turns"] = [];
+  for (const m of selected) {
+    const fields = { ...m.extracted, ...opts.overrideFields };
+    const res = await handleEnquiry(
+      { pool: opts.pool, kernel, notifier: opts.notifier ?? createLogNotifier() },
+      {
+        tenant: fx.tenant,
+        threadId: `${fx.tenant.id}:thread:${fx.id}`,
+        customerRef: fx.customerRef,
+        rateCard,
+        rateCardVersion: (rateCard as { version: number }).version,
+        now: fx.now,
+        availability: fx.availability,
+        message: m.text,
+        fields,
+      },
+    );
+    turns.push({ reply: res.reply, quote: res.outcome, fields: res.fields as RunResult["fields"], ledgerRow: res.ledgerRow });
+  }
+  const last = turns[turns.length - 1] as Omit<RunResult, "turns">;
+  return { ...last, turns };
 }

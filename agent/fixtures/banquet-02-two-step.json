@@ -1,0 +1,19 @@
+{
+  "id": "banquet-02-two-step",
+  "comment": "FICTIONAL two-message conversation. The first message omits the guest count; the agent asks once, the follow-up completes it. customerRef is a made-up label, not a phone number.",
+  "tenant": { "id": "tenant-rose-court", "name": "FICTIONAL: Rose Court Banquets" },
+  "rateCard": "rate-cards/fictional-banquet.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-003",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "Hi, do you have the hall free on 12 December 2026 for a birthday party? What would it cost?",
+      "extracted": { "service": "banquet", "date": "2026-12-12", "language": "en", "confidenceBps": 9100 }
+    },
+    {
+      "text": "Around 120 guests.",
+      "extracted": { "guestCount": 120, "language": "en", "confidenceBps": 9300 }
+    }
+  ]
+}

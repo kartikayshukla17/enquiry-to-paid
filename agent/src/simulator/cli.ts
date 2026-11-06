@@ -13,9 +13,11 @@ async function main(argv: string[]): Promise<number> {
   try {
     await migrate(pool);
     const r = await runFixture(fixture, { pool });
-    console.log("--- WhatsApp reply (fictional) ---");
-    console.log(r.reply);
-    console.log("\n--- stored ledger row ---");
+    r.turns.forEach((t, i) => {
+      console.log(`--- WhatsApp reply ${i + 1}/${r.turns.length} (fictional) ---`);
+      console.log(t.reply);
+    });
+    console.log("\n--- stored ledger row (last) ---");
     console.log(JSON.stringify(r.ledgerRow, null, 2));
     return 0;
   } finally {

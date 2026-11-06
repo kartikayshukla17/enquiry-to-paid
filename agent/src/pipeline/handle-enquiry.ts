@@ -15,7 +15,8 @@ export interface EnquiryInput {
   now: string;
   availability: Availability;
   message: string;
-  fields: ExtractedFields;
+  /** This message's extracted fields; merged over the thread's earlier ones (later wins). */
+  fields: Partial<ExtractedFields> & Record<string, unknown>;
   /** Model/provider/region/cost of the LLM calls behind this outcome (T6 supplies real values). */
   provenance?: Provenance;
 }
@@ -34,6 +35,8 @@ export interface EnquiryResult {
   reply: string;
   outcome: Outcome;
   ledgerRow: LedgerRow;
+  /** The thread's accumulated fields after merging this message. */
+  fields: ExtractedFields;
 }
 
 export const phoneHash = (ref: string) => createHash("sha256").update(`customer:${ref}`).digest("hex");
@@ -46,15 +49,6 @@ export async function handleEnquiry(
   deps: { pool: Pool; kernel: KernelBridge; notifier: Notifier },
   e: EnquiryInput,
 ): Promise<EnquiryResult> {
-  const raw = deps.kernel.evaluate({
-    rateCard: e.rateCard,
-    fields: e.fields,
-    availability: e.availability,
-    now: e.now,
-  }) as Outcome | { ok: false; error: string };
-  if (!("kind" in raw)) throw new KernelError(raw.error);
-  const outcome: Outcome = raw;
-  const reply = renderReply(outcome, e.fields);
   const cardHash = deps.kernel.rateCardHash(e.rateCard);
 
   const client = await deps.pool.connect();
@@ -64,12 +58,29 @@ export async function handleEnquiry(
     const customerId = `${e.tenant.id}:cust:${e.customerRef}`;
     await client.query(
       `INSERT INTO customers (id, tenant_id, phone_hash, language) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`,
-      [customerId, e.tenant.id, phoneHash(e.customerRef), e.fields.language],
+      [customerId, e.tenant.id, phoneHash(e.customerRef), e.fields.language ?? null],
     );
     await client.query(
       `INSERT INTO threads (id, tenant_id, customer_id) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING`,
       [e.threadId, e.tenant.id, customerId],
     );
+    // Lock the thread row so concurrent messages merge in order; later fields override earlier ones.
+    const stored = (await client.query<{ fields: Record<string, unknown> }>("SELECT fields FROM threads WHERE id = $1 FOR UPDATE", [e.threadId])).rows[0];
+    const merged = { ...(stored?.fields ?? {}), ...e.fields } as Record<string, unknown>;
+    if (typeof merged.language !== "string" || typeof merged.confidenceBps !== "number") {
+      throw new Error("extraction must carry language and confidenceBps");
+    }
+    const fields = merged as unknown as ExtractedFields;
+    const raw = deps.kernel.evaluate({
+      rateCard: e.rateCard,
+      fields,
+      availability: e.availability,
+      now: e.now,
+    }) as Outcome | { ok: false; error: string };
+    if (!("kind" in raw)) throw new KernelError(raw.error);
+    const outcome: Outcome = raw;
+    const clarifying = outcome.kind === "refusal" && outcome.reason === "missing_required_field";
+    const reply = renderReply(outcome, fields, e.rateCard);
     const cardId = (e.rateCard as { id: string }).id;
     await client.query(
       `INSERT INTO rate_cards (id, tenant_id, card_id, version, content_hash, compiled)
@@ -78,7 +89,7 @@ export async function handleEnquiry(
     );
     const base = { tenantId: e.tenant.id, threadId: e.threadId, at: e.now };
     await appendEntry(client, deps.kernel, { ...base, type: "enquiry", payload: { text: e.message } });
-    await appendEntry(client, deps.kernel, { ...base, type: "extraction", payload: { fields: e.fields } });
+    await appendEntry(client, deps.kernel, { ...base, type: "extraction", payload: { fields: e.fields, merged: fields } });
     const ledgerRow = await appendEntry(client, deps.kernel, {
       ...base,
       type: outcome.kind,
@@ -86,20 +97,22 @@ export async function handleEnquiry(
       rateCardHash: cardHash,
       ...(e.provenance ?? FIXTURE_PROVENANCE),
     });
-    await client.query("UPDATE threads SET state = $2 WHERE id = $1", [e.threadId, outcome.kind === "quote" ? "quoted" : "refused"]);
+    // A clarifying question keeps the thread open; the follow-up message completes it.
+    const state = outcome.kind === "quote" ? "quoted" : clarifying ? "open" : "refused";
+    await client.query("UPDATE threads SET state = $2, fields = $3::jsonb WHERE id = $1", [e.threadId, state, JSON.stringify(fields)]);
     await client.query("COMMIT");
     // After commit: the refusal is durable before anyone is told about it.
-    if (outcome.kind === "refusal") {
+    if (outcome.kind === "refusal" && !clarifying) {
       await deps.notifier.notify({
         tenantId: e.tenant.id,
         threadId: e.threadId,
         at: e.now,
         reason: outcome.reason,
         ...(outcome.ruleGap !== undefined && { ruleGap: outcome.ruleGap }),
-        fields: e.fields,
+        fields,
       });
     }
-    return { reply, outcome, ledgerRow };
+    return { reply, outcome, ledgerRow, fields };
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;

@@ -47,8 +47,12 @@ function renderQuote(q: Quote, f: ExtractedFields): string {
  * Builds the customer-facing reply. Every number comes from the kernel outcome
  * (or the typed fields it priced); there is no free-text number path.
  */
-export function renderReply(outcome: Outcome, fields: ExtractedFields): string {
+export function renderReply(outcome: Outcome, fields: ExtractedFields, rateCard?: unknown): string {
   if (outcome.kind === "quote") return renderQuote(outcome, fields);
+  if (outcome.reason === "missing_required_field") {
+    const q = clarifyingQuestion(outcome.ruleGap, rateCard);
+    if (q !== undefined) return `Thank you for your enquiry! ${q}`;
+  }
   return holdingReply(outcome.reason);
 }
 
@@ -70,4 +74,13 @@ export function holdingReply(reason: RefusalReason): string {
     default:
       return assertNever(reason);
   }
+}
+
+/**
+ * The question for the one field the kernel named (`ruleGap`), taken verbatim from the card's
+ * `requiredFields`. Returns undefined when the card has no such entry (never invents a question).
+ */
+export function clarifyingQuestion(field: string | undefined, rateCard: unknown): string | undefined {
+  const required = (rateCard as { requiredFields?: { field: string; question: string }[] } | undefined)?.requiredFields;
+  return required?.find((r) => r.field === field)?.question;
 }
