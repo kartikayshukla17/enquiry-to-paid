@@ -1,0 +1,29 @@
+{
+  "id": "holds-saturday",
+  "comment": "FICTIONAL. Three customers (made-up labels, not phone numbers) want the same Saturday. A quotes and holds it for 48h, B is told it is taken, the clock moves 49h and the timer releases the hold, C quotes. `holds: true` switches on the native Postgres availability provider.",
+  "tenant": { "id": "tenant-rose-court", "name": "FICTIONAL: Rose Court Banquets" },
+  "rateCard": "rate-cards/fictional-banquet.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-a",
+  "holds": true,
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "Hi, engagement function on Saturday 12 December 2026, about 120 guests. Quote please?",
+      "extracted": { "service": "banquet", "date": "2026-12-12", "guestCount": 120, "language": "en", "confidenceBps": 9200 }
+    },
+    {
+      "customerRef": "fixture-customer-b",
+      "now": "2026-11-07T12:00:00Z",
+      "text": "Hello, is 12 December 2026 free? We would be 150 people.",
+      "extracted": { "service": "banquet", "date": "2026-12-12", "guestCount": 150, "language": "en", "confidenceBps": 9100 }
+    },
+    { "tick": true, "now": "2026-11-09T11:00:00Z" },
+    {
+      "customerRef": "fixture-customer-c",
+      "now": "2026-11-09T12:00:00Z",
+      "text": "Hi, any chance for 12 December 2026? Around 100 guests.",
+      "extracted": { "service": "banquet", "date": "2026-12-12", "guestCount": 100, "language": "en", "confidenceBps": 9300 }
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { extractFields } from "../extract/extract.js";
+import type { AvailabilityProvider } from "../availability/types.js";
 import type { KernelBridge } from "../kernel/index.js";
 import type { Notifier } from "../escalation/index.js";
 import type { LlmProvider } from "../llm/types.js";
@@ -16,6 +17,8 @@ export interface MessageDeps {
   /** Let the model reword quote and clarifying replies (numbers still injected and checked by code). */
   wordReplies?: boolean;
   lowConfidenceBps?: number;
+  /** Where dates are checked and held (native Postgres in production). Absent: only the static `availability` input applies. */
+  availability?: AvailabilityProvider;
 }
 
 const UNKNOWN: Omit<Provenance, "costMinor"> = { modelId: "unknown", provider: "unknown", region: "unknown" };
@@ -35,6 +38,7 @@ export async function handleMessage(
     kernel: deps.kernel,
     notifier: deps.notifier,
     ...(deps.pii && { pii: deps.pii }),
+    ...(deps.availability && { availability: deps.availability }),
     ...(deps.lowConfidenceBps !== undefined && { lowConfidenceBps: deps.lowConfidenceBps }),
     ...(deps.wordReplies && { worder: makeReplyWorder(deps.llm) }),
   };

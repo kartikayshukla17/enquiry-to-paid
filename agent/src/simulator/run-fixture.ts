@@ -11,6 +11,8 @@ import { handleEnquiry } from "../pipeline/handle-enquiry.js";
 import { handleMessage } from "../pipeline/handle-message.js";
 import { createProvider } from "../llm/config.js";
 import type { LlmProvider } from "../llm/types.js";
+import { nativeAvailability } from "../availability/native.js";
+import { runDueTimers } from "../timers/run.js";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const AGENT_ROOT = path.join(REPO_ROOT, "agent");
@@ -27,8 +29,18 @@ interface Fixture {
   extracted?: ExtractedFields;
   /** Multi-message form (T3): per-message fixture-extracted fields, merged over earlier ones by the thread. */
   /** `extracted` omitted: the text goes through the LlmProvider (replay by default, offline). */
-  messages?: { text: string; extracted?: Partial<ExtractedFields> }[];
+  messages?: FixtureMessage[];
+  /** Use the native Postgres availability provider: quotes place a 48h hold and taken dates refuse. */
+  holds?: boolean;
 }
+
+/**
+ * One step. A message may override `customerRef` (a different customer = a different thread) and `now` (the
+ * injected clock for that step). `{ tick: true, now }` runs the due timers instead of sending a message.
+ */
+type FixtureMessage =
+  | { tick: true; now: string }
+  | { tick?: false; text: string; extracted?: Partial<ExtractedFields>; customerRef?: string; now?: string };
 
 export interface RunResult {
   reply: string;
@@ -36,7 +48,9 @@ export interface RunResult {
   fields: ExtractedFields & { date: string; guestCount: number };
   ledgerRow: LedgerRow;
   /** One entry per message processed, in order (the top-level fields describe the last). */
-  turns: Omit<RunResult, "turns">[];
+  turns: Omit<RunResult, "turns" | "ticks">[];
+  /** One entry per `tick` step: what the timer worker did at that clock. */
+  ticks?: { at: string; processed: number; expiredHolds: string[] }[];
 }
 
 export interface RunOptions {
@@ -81,15 +95,23 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
   if (selected.length === 0) throw new Error(`fixture ${fx.id} has no message ${opts.only}`);
 
   const turns: RunResult["turns"] = [];
+  const ticks: NonNullable<RunResult["ticks"]> = [];
+  const availability = fx.holds ? nativeAvailability : undefined;
   let llm = opts.llm;
   for (const m of selected) {
+    if (m.tick) {
+      const done = await runDueTimers(opts.pool, m.now, { kernel });
+      ticks.push({ at: new Date(m.now).toISOString(), processed: done.processed, expiredHolds: done.expiredHolds });
+      continue;
+    }
+    const customerRef = m.customerRef ?? fx.customerRef;
     const input = {
       tenant: fx.tenant,
-      threadId: `${fx.tenant.id}:thread:${fx.id}`,
-      customerRef: fx.customerRef,
+      threadId: m.customerRef ? `${fx.tenant.id}:thread:${fx.id}:${m.customerRef}` : `${fx.tenant.id}:thread:${fx.id}`,
+      customerRef,
       rateCard,
       rateCardVersion: (rateCard as { version: number }).version,
-      now: fx.now,
+      now: m.now ?? fx.now,
       availability: fx.availability,
       message: m.text,
     };
@@ -97,12 +119,12 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
     let res;
     if (m.extracted === undefined) {
       llm ??= createProvider();
-      res = await handleMessage({ pool: opts.pool, kernel, notifier, llm, wordReplies: opts.wordReplies ?? process.env.LLM_WORD_REPLIES === "1" }, input);
+      res = await handleMessage({ pool: opts.pool, kernel, notifier, llm, wordReplies: opts.wordReplies ?? process.env.LLM_WORD_REPLIES === "1", ...(availability && { availability }) }, input);
     } else {
-      res = await handleEnquiry({ pool: opts.pool, kernel, notifier }, { ...input, fields: { ...m.extracted, ...opts.overrideFields } });
+      res = await handleEnquiry({ pool: opts.pool, kernel, notifier, ...(availability && { availability }) }, { ...input, fields: { ...m.extracted, ...opts.overrideFields } });
     }
     turns.push({ reply: res.reply, quote: res.outcome, fields: res.fields as RunResult["fields"], ledgerRow: res.ledgerRow });
   }
-  const last = turns[turns.length - 1] as Omit<RunResult, "turns">;
-  return { ...last, turns };
+  const last = turns[turns.length - 1] as Omit<RunResult, "turns" | "ticks">;
+  return { ...last, turns, ...(ticks.length > 0 && { ticks }) };
 }

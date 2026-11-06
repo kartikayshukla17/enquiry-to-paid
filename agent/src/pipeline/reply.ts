@@ -40,26 +40,52 @@ export function fillTemplate(template: string, values: Record<string, string>): 
   return template.replace(/\{\{(\w+)\}\}/g, (_m, k: string) => values[k] ?? "");
 }
 
-function quoteTemplate(q: Quote, f: ExtractedFields): ReplyTemplate {
+/** Extra facts a reply may state besides the kernel outcome. Each is formatted from typed data, never from model text. */
+export interface ReplyContext {
+  /** The date is held for this customer until this (already formatted, tenant timezone). */
+  holdUntil?: string;
+}
+
+const TZ_LABELS: Record<string, string> = { "Asia/Kolkata": "IST", "Asia/Dubai": "GST", UTC: "UTC" };
+
+/** `9 Nov 2026, 3:30 pm IST`: an instant shown in the tenant's timezone. Pure; the instant is passed in. */
+export function formatInstantInZone(iso: string, timeZone: string): string {
+  const at = new Date(iso);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone, year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(at);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  const h = get("hour");
+  const min = String(get("minute")).padStart(2, "0");
+  const offset = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" }).formatToParts(at).find((p) => p.type === "timeZoneName")?.value ?? "";
+  const label = TZ_LABELS[timeZone] ?? offset.replace("GMT", "UTC");
+  return `${get("day")} ${MONTHS[get("month") - 1]} ${get("year")}, ${h % 12 === 0 ? 12 : h % 12}:${min} ${h < 12 ? "am" : "pm"} ${label}`;
+}
+
+function quoteTemplate(q: Quote, f: ExtractedFields, ctx: ReplyContext = {}): ReplyTemplate {
   const hasEcho = f.guestCount !== undefined && f.date;
   const intro = hasEcho
     ? "Thank you for your enquiry! Here is your quote for {{guestCount}} guests on {{date}}:"
     : "Thank you for your enquiry! Here is your quote:";
   return {
     kind: "quote",
-    template: [intro, "", "{{lines}}", "", "Total: {{total}}", "This quote is valid until {{validUntil}}."].join("\n"),
+    template: [
+      intro, "", "{{lines}}", "", "Total: {{total}}", "This quote is valid until {{validUntil}}.",
+      ...(ctx.holdUntil !== undefined ? ["Your date is held for you until {{holdUntil}}."] : []),
+    ].join("\n"),
     values: {
       ...(hasEcho && { guestCount: String(f.guestCount), date: formatDate(f.date as string) }),
       lines: q.lines.map((l) => `- ${l.label}: ${formatMoney(l.amount, q.currency)}`).join("\n"),
       total: formatMoney(q.total, q.currency),
       validUntil: formatDate(q.validUntil),
+      ...(ctx.holdUntil !== undefined && { holdUntil: ctx.holdUntil }),
     },
   };
 }
 
 /** The template behind a reply that may be LLM-worded (quote, clarifying question); undefined for holding replies. */
-export function replyTemplate(outcome: Outcome, fields: ExtractedFields, rateCard?: unknown): ReplyTemplate | undefined {
-  if (outcome.kind === "quote") return quoteTemplate(outcome, fields);
+export function replyTemplate(outcome: Outcome, fields: ExtractedFields, rateCard?: unknown, ctx: ReplyContext = {}): ReplyTemplate | undefined {
+  if (outcome.kind === "quote") return quoteTemplate(outcome, fields, ctx);
   if (outcome.reason === "missing_required_field") {
     const q = clarifyingQuestion(outcome.ruleGap, rateCard);
     if (q !== undefined) return { kind: "clarify", template: "Thank you for your enquiry! {{question}}", values: { question: q } };
@@ -71,8 +97,8 @@ export function replyTemplate(outcome: Outcome, fields: ExtractedFields, rateCar
  * Builds the customer-facing reply. Every number comes from the kernel outcome
  * (or the typed fields it priced); there is no free-text number path.
  */
-export function renderReply(outcome: Outcome, fields: ExtractedFields, rateCard?: unknown): string {
-  const t = replyTemplate(outcome, fields, rateCard);
+export function renderReply(outcome: Outcome, fields: ExtractedFields, rateCard?: unknown, ctx: ReplyContext = {}): string {
+  const t = replyTemplate(outcome, fields, rateCard, ctx);
   if (t) return fillTemplate(t.template, t.values);
   if (outcome.kind === "refusal") return holdingReply(outcome.reason);
   throw new Error("unreachable");
@@ -98,6 +124,22 @@ export function holdingReply(reason: RefusalReason): string {
       return assertNever(reason);
   }
 }
+
+/**
+ * The customer asked for a date that is taken. Specific about the date (the one number it states is the date they
+ * gave); alternatives are dates only, never prices, and only when the card allows them.
+ */
+export function unavailableReply(date: string, alternatives: string[] = []): string {
+  const head = `Thank you for your enquiry! Unfortunately ${formatDate(date)} is not available.`;
+  const alt =
+    alternatives.length > 0
+      ? ` These nearby dates are free: ${alternatives.map(formatDate).join(", ")}. Tell me if one of them works.`
+      : " I have let our team know in case anything changes.";
+  return head + alt;
+}
+
+/** Said when the customer comes back to a quote whose validity has passed: it is not honoured, it is re-checked. */
+export const EXPIRED_QUOTE_PREFIX = "Your earlier quote has expired, so I have checked our current rates and availability again. ";
 
 /**
  * The question for the one field the kernel named (`ruleGap`), taken verbatim from the card's

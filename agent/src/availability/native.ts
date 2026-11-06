@@ -38,7 +38,17 @@ export interface Block {
   reason: string;
 }
 
+/**
+ * Serialises writers of one resource (holds and blocks) for the rest of the transaction. This is what keeps
+ * concurrent writers from deadlocking on the exclusion constraint; the constraint itself stays as the backstop
+ * that makes an overlap impossible even if a writer skips this lock.
+ */
+async function lockResource(tx: Tx, tenantId: string, resourceId: string): Promise<void> {
+  await tx.query("SELECT 1 FROM resources WHERE tenant_id=$1 AND id=$2 FOR UPDATE", [tenantId, resourceId]);
+}
+
 export async function addBlock(tx: Tx, b: BlockInput): Promise<void> {
+  await lockResource(tx, b.tenantId, b.resourceId);
   await tx.query(
     `INSERT INTO availability_blocks (tenant_id, resource_id, start_date, end_date, reason, source, created_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
@@ -93,6 +103,7 @@ export const nativeAvailability: AvailabilityProvider = {
   },
 
   async placeHold(tx: Tx, req: HoldRequest): Promise<HoldResult> {
+    await lockResource(tx, req.tenantId, req.resourceId);
     // The thread's own earlier hold: identical dates and still live -> reuse; otherwise release it (one hold per thread).
     const own = (
       await tx.query<HoldRow>(

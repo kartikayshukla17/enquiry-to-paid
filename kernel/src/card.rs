@@ -104,6 +104,11 @@ pub struct RateCard {
     pub valid_days: i64,
     #[allow(dead_code)]
     pub hold_hours: i64,
+    /// When true, the agent may suggest nearby free dates after a `date_unavailable` refusal. Absent means off.
+    /// Read by the agent (TS), not by pricing; declared here because the card format denies unknown fields.
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub offer_alternatives: Option<bool>,
     pub required_fields: Vec<RequiredField>,
     pub tax_lines: Vec<TaxLine>,
     pub rules: Vec<Rule>,

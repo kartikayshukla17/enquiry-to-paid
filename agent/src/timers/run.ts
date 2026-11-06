@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from "pg";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
-import { appendEntry } from "../ledger/index.js";
+import { GENESIS_HASH, appendEntry } from "../ledger/index.js";
 import { APP_ROLE } from "../tenancy/with-tenant.js";
 
 export interface RunResult {
@@ -46,6 +46,12 @@ export async function runDueTimers(pool: Pool, now: string, opts: { kernel?: Ker
       }
       await client.query(`SET LOCAL ROLE ${APP_ROLE}`);
       await client.query("SELECT set_config('app.tenant_id', $1, true)", [due.tenant_id]);
+      // Same lock order as the pipeline (ledger head first, then hold rows) so the two can never deadlock.
+      await client.query(
+        "INSERT INTO ledger_heads (tenant_id, last_tenant_seq, last_hash) VALUES ($1, 0, $2) ON CONFLICT (tenant_id) DO NOTHING",
+        [due.tenant_id, GENESIS_HASH],
+      );
+      await client.query("SELECT 1 FROM ledger_heads WHERE tenant_id=$1 FOR UPDATE", [due.tenant_id]);
       const expired = await runTimer(client, kernel, due, now);
       await client.query(`UPDATE timers SET status='done', done_at=$2::timestamptz, attempts = attempts + 1 WHERE id=$1`, [due.id, now]);
       await client.query("COMMIT");

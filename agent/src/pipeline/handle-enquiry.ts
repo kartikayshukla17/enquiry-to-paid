@@ -4,7 +4,10 @@ import { KernelError, NEGOTIATION_INTENTS, type Availability, type ExtractedFiel
 import type { Notifier } from "../escalation/index.js";
 import { appendEntry, type LedgerRow } from "../ledger/index.js";
 import type { ReplyWorder } from "../llm/word-reply.js";
-import { disclosureReply, holdingReply, renderReply, replyTemplate } from "./reply.js";
+import { defaultResource } from "../availability/native.js";
+import type { AvailabilityProvider } from "../availability/types.js";
+import { alternativeDates, holdHoursOf, offersAlternatives, priorQuoteExpired, timezoneOf } from "./availability-helpers.js";
+import { EXPIRED_QUOTE_PREFIX, disclosureReply, formatInstantInZone, holdingReply, renderReply, replyTemplate, unavailableReply, type ReplyContext } from "./reply.js";
 import { encryptPii, phoneHash, piiKeysFromEnv, type PiiKeys } from "../security/pii.js";
 import { withTenant } from "../tenancy/with-tenant.js";
 
@@ -57,7 +60,7 @@ export interface EnquiryResult {
  * Free text (`message`) is stored in the ledger only; it never reaches the kernel.
  */
 export async function handleEnquiry(
-  deps: { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number },
+  deps: { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider },
   e: EnquiryInput,
 ): Promise<EnquiryResult> {
   const cardHash = deps.kernel.rateCardHash(e.rateCard);
@@ -98,6 +101,7 @@ export async function handleEnquiry(
     let outcome: TurnOutcome;
     let reply: string;
     let clarifying = false;
+    const holdEvents: { threadId: string; payload: Record<string, unknown> }[] = [];
     let wording: Provenance | undefined;
     if (gated) {
       // Gate: this read is untrusted. Nothing merges into the thread, the kernel is not consulted, no quote is possible.
@@ -125,21 +129,54 @@ export async function handleEnquiry(
       } else {
         // Only a typed negotiation intent crosses to the kernel (as an enum value); the kernel owns the refusal.
         const kernelFields = intent !== undefined && (NEGOTIATION_INTENTS as readonly unknown[]).includes(intent) ? { ...fields, intent } : fields;
-        const raw = deps.kernel.evaluate({
-          rateCard: e.rateCard,
-          fields: kernelFields,
-          availability: e.availability,
-          now: e.now,
-        }) as Outcome | { ok: false; error: string };
-        if (!("kind" in raw)) throw new KernelError(raw.error);
-        outcome = raw;
+        const evaluate = (blockedDates: string[], onDate?: string): Outcome => {
+          const raw = deps.kernel.evaluate({
+            rateCard: e.rateCard,
+            fields: onDate ? { ...kernelFields, date: onDate } : kernelFields,
+            availability: { blockedDates },
+            now: e.now,
+          }) as Outcome | { ok: false; error: string };
+          if (!("kind" in raw)) throw new KernelError(raw.error);
+          return raw;
+        };
+        // Availability is read before the kernel: the provider's blocked dates join the caller's static ones.
+        const provider = deps.availability;
+        const date = typeof fields.date === "string" ? fields.date : undefined;
+        const resourceId = provider && date ? await defaultResource(client, e.tenant.id) : undefined;
+        const blocked = [...e.availability.blockedDates];
+        if (provider && date && resourceId) {
+          blocked.push(...(await provider.blockedDates(client, { tenantId: e.tenant.id, resourceId, from: date, to: date, now: e.now, ignoreThreadId: e.threadId })));
+        }
+        outcome = evaluate(blocked);
+        // A quote and its hold are one atomic step: if the hold cannot be placed (a concurrent enquiry won the date),
+        // the kernel is asked again with the date blocked and the quote is never issued.
+        let holdUntil: string | undefined;
+        if (outcome.kind === "quote" && provider && date && resourceId) {
+          const expiresAt = new Date(Date.parse(e.now) + holdHoursOf(e.rateCard) * 3_600_000).toISOString();
+          const placed = await provider.placeHold(client, { tenantId: e.tenant.id, resourceId, threadId: e.threadId, start: date, end: date, expiresAt, now: e.now });
+          if (!placed.ok) {
+            outcome = evaluate([...blocked, date]);
+          } else {
+            holdUntil = placed.hold.expiresAt;
+            for (const h of placed.sweptExpired) holdEvents.push({ threadId: h.threadId, payload: { action: "expired", holdId: h.id, resourceId: h.resourceId, start: h.start, end: h.end, expiresAt: h.expiresAt } });
+            if (!placed.reused) holdEvents.push({ threadId: e.threadId, payload: { action: "placed", holdId: placed.hold.id, resourceId, start: date, end: date, expiresAt: holdUntil } });
+          }
+        }
         clarifying = outcome.kind === "refusal" && outcome.reason === "missing_required_field";
-        reply = renderReply(outcome, fields, e.rateCard);
-        const t = deps.worder ? replyTemplate(outcome, fields, e.rateCard) : undefined;
-        if (deps.worder && t) {
-          const w = await deps.worder(t.kind, t.template, t.values);
-          reply = w.reply;
-          wording = w.provenance;
+        const ctx: ReplyContext = holdUntil !== undefined ? { holdUntil: formatInstantInZone(holdUntil, timezoneOf(e.rateCard)) } : {};
+        const priorExpired = (outcome.kind === "quote" || outcome.reason === "date_unavailable") && (await priorQuoteExpired(client, e.threadId, e.now));
+        const prefix = priorExpired ? EXPIRED_QUOTE_PREFIX : "";
+        if (outcome.kind === "refusal" && outcome.reason === "date_unavailable" && date) {
+          const alts = provider && resourceId && offersAlternatives(e.rateCard) ? await alternativeDates(client, provider, evaluate, { tenantId: e.tenant.id, resourceId, threadId: e.threadId, date, now: e.now, blocked }) : [];
+          reply = prefix + unavailableReply(date, alts);
+        } else {
+          reply = prefix + renderReply(outcome, fields, e.rateCard, ctx);
+          const t = deps.worder ? replyTemplate(outcome, fields, e.rateCard, ctx) : undefined;
+          if (deps.worder && t) {
+            const w = await deps.worder(t.kind, t.template, t.values);
+            reply = prefix + w.reply;
+            wording = w.provenance;
+          }
         }
       }
       await appendEntry(client, deps.kernel, {
@@ -159,6 +196,7 @@ export async function handleEnquiry(
       rateCardHash: cardHash,
       ...outcomeProv,
     });
+    for (const h of holdEvents) await appendEntry(client, deps.kernel, { ...base, threadId: h.threadId, type: "hold", payload: h.payload });
     // A clarifying question keeps the thread open; the follow-up message completes it. A gated read leaves stored fields alone.
     const state = outcome.kind === "disclosure" ? (stored?.state ?? "open") : outcome.kind === "quote" ? "quoted" : clarifying ? "open" : "refused";
     if (gated) await client.query("UPDATE threads SET state = $2 WHERE id = $1", [e.threadId, state]);
