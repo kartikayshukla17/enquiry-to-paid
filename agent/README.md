@@ -1,5 +1,32 @@
 # agent
 
+## Availability, holds and timers (T10)
+
+Needs the local Postgres and `pnpm build:kernel` once (the kernel now accepts an optional card field `offerAlternatives`). No network.
+
+```sh
+pnpm sim run fixtures/holds-saturday.json   # the demo below, in a throwaway database
+pnpm sim tick --now 2026-11-09T11:00:00Z    # run every durable timer due at that instant (hold expiry) against DATABASE_URL
+```
+
+Demo (`fixtures/holds-saturday.json`, three fictional customers, one Saturday, the clock is the fixture's): customer A on 7 Nov 10:00 gets a quote and "Your date is held for you until 9 Nov 2026, 3:30 pm IST"; customer B two hours later is told "Unfortunately 12 Dec 2026 is not available" (no price); the clock moves to 9 Nov 11:00 (49h), the tick expires A's hold and releases the date; customer C then gets a quote and a fresh hold until 11 Nov 5:30 pm IST.
+
+- `AvailabilityProvider` (`src/availability/types.ts`): `blockedDates` (dates a quote must not be issued for) and `placeHold` (atomic: write the hold or report `taken`). `nativeAvailability` (`native.ts`) is the Postgres implementation; the Calendar one (T21) plugs in behind the same interface. Passed to the pipeline as `deps.availability`; without it only the caller's static `availability.blockedDates` apply (existing fixtures, eval and adversarial runs are unchanged). Fixtures opt in with `"holds": true`.
+- Tables (migration 0007, all with `tenant_id`, forced RLS, same policy as the rest): `availability_blocks` (inclusive date range, reason, source), `holds` (resource, thread, date range, `expires_at`, status `active|expired|released|confirmed`) with an exclusion constraint `holds_no_overlap` (btree_gist, `WHERE status='active'`) so two active holds can never overlap on a resource, and `timers` (kind `hold_expiry`, `run_at`, `pending|done`, unique per subject). A resource is the tenant's `<tenant>:resource:default` unless one is named.
+- Pipeline order: extraction -> read blocked dates for the requested date (provider + static) -> kernel (taken date = `date_unavailable` refusal, never a quote) -> if a quote: `placeHold` in the SAME transaction, then the quote row, then a ledger `hold` entry (`action: placed`). If the hold loses a race the kernel is asked again with the date blocked, so the quote is never issued. The hold lasts the card's `holdHours` from the injected `now`; the reply says "Your date is held for you until <time in the card's timezone>".
+- Refusal reply for a taken date states the date and that it is not available; nearby free dates (dates only, never prices, up to three, +-14 days, only dates the kernel would quote, no hold placed) are offered ONLY if the card sets `offerAlternatives: true`. The banquet card does not set it.
+- Owner commands (`handleOwnerCommand`, `commands.ts`): `block 2026-12-12 hall maintenance`, `block 2026-12-12 to 2026-12-14 reason`, `unblock 2026-12-12`, `show blocks`. A small regex parser, no LLM; anything else is "not a command" and goes to the normal pipeline; a malformed block/unblock gets a usage reply, never a guess. Sender is looked up in `members` by phone hash; only `owner` and `manager` may change blocks (staff and strangers are told no and the attempt is logged). Each command appends an `owner_message` ledger entry on the tenant's operations thread (`<tenant>:thread:ops`).
+- Timers: `runDueTimers(pool, now, {kernel?})` (`src/timers/run.ts`). For each due `pending` timer it opens a transaction, claims the row with `FOR UPDATE SKIP LOCKED`, drops to the app role with the tenant set, expires the hold (only if still `active`), appends a ledger `hold` entry (`action: expired`) and marks the timer done, all in one commit. A crash rolls the claim back, so the timer is just due again; running twice, or two workers at once, expires each hold once. Durability test recreates the pool.
+- Expired quotes: every message is re-evaluated by the kernel against the CURRENT card and availability; a quote is never replayed. If the thread's latest quote is past its `validUntil` the reply starts "Your earlier quote has expired, so I have checked our current rates and availability again." and the new price, or the new refusal, follows.
+
+Ruling: Postgres is the authority for availability. A hold past `expires_at` is non-blocking at READ time (the check uses the injected clock), so a stalled or absent worker can never keep a date locked; the timer only does the bookkeeping (status, ledger entry). A hold that a later booking sweeps first is logged as expired by that booking and the timer then finds nothing to do.
+Ruling: asking again for the date you already hold reuses the hold and does NOT extend it, so a customer cannot squat on a date by messaging every 47 hours. Asking for a different date releases the old hold (one active hold per thread).
+Ruling: writers of one resource (holds, blocks) take a row lock on the `resources` row, which both prevents the exclusion-constraint deadlock under three or more concurrent writers and keeps the constraint as a backstop that nobody can bypass. The pipeline's lock order is thread, ledger head, resource; the timer worker takes the ledger head before touching holds, so the two cannot deadlock.
+Ruling: `runDueTimers` needs a pool on the OWNER role (the one deliberate cross-tenant path, like `ledger verify`), because the claim query must see every tenant's due timers; the work itself runs as `e2p_app` with `app.tenant_id` set. Blocking a date that already has a live hold does not cancel the hold (the owner is told); the hold's customer keeps the date they were quoted.
+Ruling: a taken date still escalates to the owner like any `date_unavailable` refusal (it is lost demand they may want to see); the customer reply is specific, not the generic "passed to our team" holding text.
+Ruling: the number rule from T1 stands: the only new digits in a reply are the hold time (formatted from the stored timestamp) and, with `offerAlternatives`, dates; a test derives the allowed set independently.
+Ruling: not done here: `confirmed` hold status is defined but nothing sets it until payment (T15); a hold covers one date per enquiry (multi-day events need a card field for duration); timers are polled by whoever calls `tick`/`runDueTimers` (a scheduler in production is deployment, not code in this repo).
+
 ## Provider swap gate (T9)
 
 Needs the local Postgres (a throwaway database is created and dropped) and `pnpm build:kernel` once. No network.

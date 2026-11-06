@@ -1,8 +1,10 @@
 import pg from "pg";
-import { DEFAULT_DATABASE_URL } from "../ledger/test-db.js";
+import { readFile } from "node:fs/promises";
+import { createTestDb, DEFAULT_DATABASE_URL } from "../ledger/test-db.js";
+import { runDueTimers } from "../timers/run.js";
 import { migrate } from "../ledger/migrate.js";
 import { randomBytes } from "node:crypto";
-import { runFixture } from "./run-fixture.js";
+import { resolveFixture, runFixture } from "./run-fixture.js";
 import { runChat } from "./chat.js";
 import { runTwoTenants } from "./two-tenants.js";
 
@@ -13,9 +15,27 @@ function flag(argv: string[], name: string): string | undefined {
 
 async function main(argv: string[]): Promise<number> {
   const [cmd, fixture] = argv;
+  if (cmd === "tick") {
+    // Runs every durable timer due at --now (hold expiry). The clock is always explicit: nothing here reads the system time.
+    const now = flag(argv, "--now");
+    if (!now || Number.isNaN(Date.parse(now)) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(now)) {
+      console.error("usage: pnpm sim tick --now <ISO-8601 UTC instant, e.g. 2026-11-09T11:00:00Z>");
+      return 2;
+    }
+    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL });
+    try {
+      await migrate(pool);
+      const r = await runDueTimers(pool, now);
+      console.log(`tick at ${now}: ${r.processed} timer(s) run, ${r.expiredHolds.length} hold(s) expired and their dates released`);
+      for (const id of r.expiredHolds) console.log(`  expired hold ${id}`);
+      return 0;
+    } finally {
+      await pool.end();
+    }
+  }
   if ((cmd !== "run" && cmd !== "two-tenants" && cmd !== "chat") || !fixture) {
     console.error(
-      'usage: pnpm sim run <fixture.json> | pnpm sim two-tenants <fixture.json> | pnpm sim chat "<english text>" [--tenant <id>] [--card <rate-cards/x.json>] [--customer <ref>] [--words]\n' +
+      'usage: pnpm sim run <fixture.json> | pnpm sim two-tenants <fixture.json> | pnpm sim tick --now <iso> | pnpm sim chat "<english text>" [--tenant <id>] [--card <rate-cards/x.json>] [--customer <ref>] [--words]\n' +
         "  chat/run use LLM_PROVIDER=groq|fixture|keyword (default fixture), LLM_MODEL (must be in agent/config/enabled-providers.json) and LLM_MODE=record|replay|live (default replay, offline)",
     );
     return 2;
@@ -62,11 +82,22 @@ async function main(argv: string[]): Promise<number> {
       console.log(JSON.stringify(c.ledgerRow, null, 2));
       return 0;
     }
-    const r = await runFixture(fixture, { pool });
+    // A fixture with `holds: true` replays a whole timeline on its own clock, so it runs in a throwaway database
+    // (re-running against a database that already holds the date would otherwise change the story).
+    const scratch = JSON.parse(await readFile(resolveFixture(fixture), "utf8")) as { holds?: boolean };
+    const scratchDb = scratch.holds ? await createTestDb() : undefined;
+    let r;
+    try {
+      r = await runFixture(fixture, { pool: scratchDb?.pool ?? pool });
+    } finally {
+      await scratchDb?.drop();
+    }
+    if (scratchDb) console.error("note: hold fixture ran in a throwaway database (dropped afterwards)");
     r.turns.forEach((t, i) => {
       console.log(`--- WhatsApp reply ${i + 1}/${r.turns.length} (fictional) ---`);
       console.log(t.reply);
     });
+    for (const k of r.ticks ?? []) console.log(`--- tick at ${k.at}: ${k.processed} timer(s) run, ${k.expiredHolds.length} hold(s) expired ---`);
     console.log("\n--- stored ledger row (last) ---");
     console.log(JSON.stringify(r.ledgerRow, null, 2));
     return 0;
