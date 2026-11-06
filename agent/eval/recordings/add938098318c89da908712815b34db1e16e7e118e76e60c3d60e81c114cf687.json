@@ -1,0 +1,25 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Shayad 100-150 log honge, December ke end mein kabhi, abhi pakka nahi hai.",
+    "schemaVersion": "extract-v1"
+  },
+  "promptHash": "a69729dc2bae3e0e993ce131c296557d2a907970288796e7dd07732bce697e80",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": null,
+      "guestCount": 125,
+      "locality": null,
+      "language": "hinglish",
+      "confidenceBps": 5200
+    }
+  }
+}

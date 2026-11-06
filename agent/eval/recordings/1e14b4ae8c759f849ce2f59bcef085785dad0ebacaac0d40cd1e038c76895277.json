@@ -1,0 +1,25 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Greater Noida West mein 2 January 2027 ko mehendi function hai, 80 log, banquet chahiye.",
+    "schemaVersion": "extract-v1"
+  },
+  "promptHash": "a69729dc2bae3e0e993ce131c296557d2a907970288796e7dd07732bce697e80",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": "2027-01-02",
+      "guestCount": 80,
+      "locality": "greater-noida-west",
+      "language": "en",
+      "confidenceBps": 8700
+    }
+  }
+}

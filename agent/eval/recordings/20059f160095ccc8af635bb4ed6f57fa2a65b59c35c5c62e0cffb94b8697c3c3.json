@@ -1,0 +1,25 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Table for a big wedding party, forty guests, 5 December 2026, in your banquet hall.",
+    "schemaVersion": "extract-v1"
+  },
+  "promptHash": "a69729dc2bae3e0e993ce131c296557d2a907970288796e7dd07732bce697e80",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": "2026-12-05",
+      "guestCount": "forty",
+      "locality": null,
+      "language": "en",
+      "confidenceBps": 9000
+    }
+  }
+}
