@@ -1,0 +1,103 @@
+{
+  "comment": "FICTIONAL example rate card for tests and demos. Not a real studio or real prices. Packages by slug (basic/standard/premium) with included coverage hours, extra hours billed per hour beyond those, travel banded by distance (upper bounds inclusive), weekend surcharge, GST. Coverage: 1-12 hours, up to 60 km; anything else has no covering rule.",
+  "currency": "INR",
+  "fictional": true,
+  "holdHours": 48,
+  "id": "fictional-photographer",
+  "label": "FICTIONAL: Lensfolk Studio sample rate card (packages, extra hours, travel bands)",
+  "requiredFields": [
+    { "field": "service", "question": "What kind of shoot is it?" },
+    { "field": "date", "question": "Which date do you have in mind?" },
+    { "field": "package", "question": "Which package would you like: Basic, Standard or Premium?" },
+    { "field": "hours", "question": "How many hours of coverage do you need?" },
+    { "field": "distanceKm", "question": "Roughly how many kilometres is the venue from Greater Noida West?" }
+  ],
+  "rules": [
+    {
+      "ruleId": "pkg-basic",
+      "core": true,
+      "label": "Basic package (4 hours included)",
+      "when": [
+        { "field": "service", "op": "in", "values": ["wedding-shoot", "event-shoot"] },
+        { "field": "package", "op": "eq", "value": "basic" },
+        { "field": "hours", "op": "range", "min": 1, "max": 12 },
+        { "field": "distanceKm", "op": "range", "min": 0, "max": 60 }
+      ],
+      "charge": { "kind": "flat", "amount": 2500000 }
+    },
+    {
+      "ruleId": "pkg-standard",
+      "core": true,
+      "label": "Standard package (6 hours included)",
+      "when": [
+        { "field": "service", "op": "in", "values": ["wedding-shoot", "event-shoot"] },
+        { "field": "package", "op": "eq", "value": "standard" },
+        { "field": "hours", "op": "range", "min": 1, "max": 12 },
+        { "field": "distanceKm", "op": "range", "min": 0, "max": 60 }
+      ],
+      "charge": { "kind": "flat", "amount": 4500000 }
+    },
+    {
+      "ruleId": "pkg-premium",
+      "core": true,
+      "label": "Premium package (8 hours included)",
+      "when": [
+        { "field": "service", "op": "in", "values": ["wedding-shoot", "event-shoot"] },
+        { "field": "package", "op": "eq", "value": "premium" },
+        { "field": "hours", "op": "range", "min": 1, "max": 12 },
+        { "field": "distanceKm", "op": "range", "min": 0, "max": 60 }
+      ],
+      "charge": { "kind": "flat", "amount": 8000000 }
+    },
+    {
+      "ruleId": "extra-hours-basic",
+      "label": "Extra coverage hours (Basic)",
+      "when": [
+        { "field": "package", "op": "eq", "value": "basic" },
+        { "field": "hours", "op": "range", "min": 5, "max": 12 }
+      ],
+      "charge": { "kind": "per_unit", "field": "hours", "unitAmount": 400000, "included": 4 }
+    },
+    {
+      "ruleId": "extra-hours-standard",
+      "label": "Extra coverage hours (Standard)",
+      "when": [
+        { "field": "package", "op": "eq", "value": "standard" },
+        { "field": "hours", "op": "range", "min": 7, "max": 12 }
+      ],
+      "charge": { "kind": "per_unit", "field": "hours", "unitAmount": 350000, "included": 6 }
+    },
+    {
+      "ruleId": "extra-hours-premium",
+      "label": "Extra coverage hours (Premium)",
+      "when": [
+        { "field": "package", "op": "eq", "value": "premium" },
+        { "field": "hours", "op": "range", "min": 9, "max": 12 }
+      ],
+      "charge": { "kind": "per_unit", "field": "hours", "unitAmount": 300000, "included": 8 }
+    },
+    {
+      "ruleId": "travel",
+      "label": "Travel",
+      "when": [{ "field": "distanceKm", "op": "range", "min": 16, "max": 60 }],
+      "charge": {
+        "kind": "tiered",
+        "field": "distanceKm",
+        "tiers": [
+          { "upTo": 30, "amount": 150000 },
+          { "upTo": 60, "amount": 350000 }
+        ]
+      }
+    },
+    {
+      "ruleId": "weekend-surcharge",
+      "label": "Weekend surcharge (Fri-Sun)",
+      "when": [{ "field": "date", "op": "weekday_in", "days": ["fri", "sat", "sun"] }],
+      "charge": { "kind": "flat", "amount": 500000 }
+    }
+  ],
+  "taxLines": [{ "ruleId": "gst-18", "label": "GST 18%", "rateBps": 1800 }],
+  "timezone": "Asia/Kolkata",
+  "validDays": 7,
+  "version": 1
+}
