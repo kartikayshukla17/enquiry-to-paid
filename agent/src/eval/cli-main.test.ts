@@ -44,12 +44,15 @@ describe("pnpm eval", () => {
     const baseline = JSON.parse(await readFile(await baselinePath(), "utf8"));
     expect(baseline.provenance.label).toBe("measured on fictional data; recorded-fixture provider, not a live model");
     expect(Object.keys(baseline.languages)).toEqual(["en", "hinglish", "hi"]);
-    expect(Object.keys(baseline.inputs.setHashes).sort()).toEqual(["en.jsonl", "hinglish.jsonl"]);
+    expect(Object.keys(baseline.inputs.setHashes).sort()).toEqual(["en.jsonl", "hinglish.jsonl", "photographer.jsonl"]);
 
     const md = await readFile(paths.resultsPath!, "utf8");
     expect(md).toContain("measured on fictional data; recorded-fixture provider, not a live model");
     expect(md).toMatch(/not (a )?(measure|model accuracy)/i);
     expect(md).toContain("Unsafe quotes");
+    expect(md).toContain("Results per rate card");
+    expect(md).toContain("`fictional-photographer`");
+    expect(r.out).toMatch(/fictional-photographer\s+14/);
     expect(md).toContain("en-09"); // bad numbers are named, not hidden
   });
 

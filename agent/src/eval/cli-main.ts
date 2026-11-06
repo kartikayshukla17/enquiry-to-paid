@@ -43,15 +43,38 @@ export function renderTable(r: EvalReport): string {
   return [line(rows[0]!), line(w.map((n) => "-".repeat(n))), ...rows.slice(1).map(line)].join("\n");
 }
 
+/** Per-card console table: how much of each card's traffic was priced versus refused. */
+export function renderCardTable(r: EvalReport): string {
+  const cols = ["card", "n", "quotes", "refusals", "clarify", "refusal share", "out-of-coverage quotes", "outcome acc"];
+  const rows = [
+    cols,
+    ...Object.entries(r.cards).map(([id, c]) => [
+      id,
+      String(c.cases),
+      String(c.quotes),
+      String(c.refusals),
+      String(c.clarifications),
+      pct(c.refusalShareBps),
+      String(c.outOfCoverageQuotes),
+      pct(c.pipeline.outcomeAccuracyBps),
+    ]),
+  ];
+  const w = cols.map((_, i) => Math.max(...rows.map((x) => x[i]!.length)));
+  const line = (x: string[]) => x.map((c, i) => c.padEnd(w[i]!)).join("  ").trimEnd();
+  return [line(rows[0]!), line(w.map((n) => "-".repeat(n))), ...rows.slice(1).map(line)].join("\n");
+}
+
 function render(r: EvalReport): string {
   const u = r.overall.pipeline;
   const unsafeIds = r.cases.filter((c) => c.unsafe).map((c) => `${c.id} (gold ${c.gold})`);
   return [
     `eval: ${r.provenance.label}`,
-    `model ${r.provenance.modelId}  prompt ${r.provenance.promptHash8}  card ${r.provenance.rateCard.id}  cases ${r.inputs.caseCount}`,
+    `model ${r.provenance.modelId}  prompt ${r.provenance.promptHash8}  cards ${r.provenance.rateCards.map((c) => c.id).join(", ")}  cases ${r.inputs.caseCount}`,
     "These recordings are hand-seeded. The numbers check the harness and the safety gates; they are NOT a measurement of any model's accuracy in any language.",
     "",
     renderTable(r),
+    "",
+    renderCardTable(r),
     "",
     `unsafe quotes issued: ${u.unsafeQuotes}${u.unsafeQuotes ? `  <-- gold says clarify/refuse: ${unsafeIds.join(", ")}` : ""}`,
     `quotes at the wrong price: ${u.wrongPriceQuotes}${u.wrongPriceCaseIds.length ? ` (${u.wrongPriceCaseIds.join(", ")})` : ""}`,

@@ -1,0 +1,27 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Bhaiya 9 December 2026 ko shaadi ki photography chahiye, Standard package, 6 ghante, venue 10 km door hai.",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "wedding-shoot",
+      "date": "2026-12-09",
+      "language": "hinglish",
+      "package": "standard",
+      "hours": 6,
+      "distanceKm": 10,
+      "confidenceBps": 9000,
+      "intent": "enquiry"
+    }
+  }
+}

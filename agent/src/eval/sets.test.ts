@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadKernel } from "../kernel/index.js";
 import type { Outcome } from "../kernel/types.js";
 import { validateExtraction } from "../extract/schema.js";
-import { EVAL_NOW, loadRateCard, loadSets, outcomeClass } from "./sets.js";
+import { EVAL_NOW, cardOf, loadRateCard, loadSets, outcomeClass } from "./sets.js";
 
 describe("labelled eval sets", () => {
   it("has 30+ fictional enquiries with at least 12 English, 12 Latin-script Hinglish and some Devanagari", async () => {
@@ -26,8 +26,8 @@ describe("labelled eval sets", () => {
   it("every gold outcome is exactly what the kernel says for the gold fields (labels are not guesses)", async () => {
     const { cases } = await loadSets();
     const kernel = await loadKernel();
-    const card = await loadRateCard();
     for (const c of cases) {
+      const card = await loadRateCard(cardOf(c));
       const fields = Object.fromEntries(Object.entries(c.gold).filter(([, v]) => v !== null));
       const out = kernel.evaluate({
         rateCard: card,
@@ -39,6 +39,16 @@ describe("labelled eval sets", () => {
       expect(got.kind, c.id).toBe(c.outcome.kind);
       expect(got.reason, c.id).toBe((c.outcome as { reason?: string }).reason);
     }
+  });
+
+  it("labels at least 8 photographer enquiries, English and Hinglish, with quote, clarify and refuse outcomes", async () => {
+    const { cases } = await loadSets();
+    const ph = cases.filter((c) => cardOf(c) === "fictional-photographer");
+    expect(ph.length).toBeGreaterThanOrEqual(8);
+    expect(ph.filter((c) => c.lang === "en").length).toBeGreaterThanOrEqual(4);
+    expect(ph.filter((c) => c.lang === "hinglish").length).toBeGreaterThanOrEqual(4);
+    expect(new Set(ph.map((c) => c.outcome.kind))).toEqual(new Set(["quote", "clarify", "refuse"]));
+    expect(ph.some((c) => c.outcome.kind === "refuse" && c.outcome.reason === "no_covering_rule")).toBe(true);
   });
 
   it("includes deliberately hard cases (ambiguous dates, code-switched numbers)", async () => {

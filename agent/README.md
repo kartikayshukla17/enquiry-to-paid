@@ -1,5 +1,26 @@
 # agent
 
+## Second vertical: photographer card (T11)
+
+Needs the local Postgres and `pnpm build:kernel` once (the kernel gained `per_unit.included`). No network.
+
+```sh
+pnpm sim run fixtures/photographer-01-quote.json           # Standard package, 6 h, 10 km: package + GST
+pnpm sim run fixtures/photographer-02-extra-hours.json     # Premium, 10 h (2 extra), 45 km (band 2), Saturday: five lines + GST
+pnpm sim run fixtures/photographer-03-missing-field.json   # no package named: the card's own question, thread stays open
+pnpm sim run fixtures/photographer-04-out-of-coverage.json # 85 km: no_covering_rule, holding reply, escalation, no number
+pnpm --filter agent exec tsx src/eval/cli.ts               # per-language AND per-card tables (writes RESULTS.md)
+cargo test --manifest-path kernel/Cargo.toml --test card_photographer
+```
+
+- The card is `rate-cards/fictional-photographer.json` (FICTIONAL, labelled). The only engine change is the generic `per_unit.included` (units beyond an included quantity); travel bands reuse `tiered`, packages reuse `eq` on a `package` slug. A grep guard (`src/guards/guards.test.ts`) fails the build if kernel or agent source ever names a vertical, or uses float money.
+- `ExtractedFields` gained four generic optional typed fields, rebuilt field by field like the rest: `package` (slug), `quantity` (1..1,000,000), `hours` (1..48), `distanceKm` (0..100,000). A card decides what they mean. The extraction prompt lists them, so the schema version is now `extract-v3`.
+- Eval: 14 labelled photographer enquiries (7 English, 7 Hinglish) in `agent/eval/sets/photographer.jsonl`, each with a `card` dimension. The report and `RESULTS.md` carry a per-card table (quotes, refusals, refusal share, out-of-coverage quotes). A case scores the extraction fields its gold names, so photographer cases score `package`, `hours` and `distanceKm`, and banquet cases are scored exactly as before. Card report order lives in `agent/eval/cards.json` (data).
+
+Ruling: the prompt changed, so every recording keyed by the old prompt hash was regenerated with the documented seed scripts (`src/llm/seed-recordings.ts`, `src/eval/seed.ts`, `src/adversarial/seed.ts`), the baseline moved from `recorded-fixture-v1.561b3af9.json` to `recorded-fixture-v1.09cc42a3.json`, and `config/enabled-providers.json` was repointed to it (`gate.test.ts` checks `enabledAt` equals the baseline's sha256). The 37 banquet cases score exactly as before.
+Ruling: coverage is a property of the `core` rules' `when` ranges, not a separate concept: hours over 12, a venue over 60 km, an unknown package or an unknown service all fall out as `no_covering_rule` with the failing field named in `ruleGap`.
+Ruling: the photographer set contains two confidently wrong reads (a 40 km venue read as 4, "pachaas" read as 15) that under-price; they are published as wrong-price quotes, not tuned away. There are no out-of-coverage quotes.
+
 ## Availability, holds and timers (T10)
 
 Needs the local Postgres and `pnpm build:kernel` once (the kernel now accepts an optional card field `offerAlternatives`). No network.

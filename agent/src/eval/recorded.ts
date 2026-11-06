@@ -83,6 +83,18 @@ export const MISTAKES: Record<string, { why: string; response: RawResponse }> = 
     why: "reads 'डेढ़ सौ' as 100",
     response: { service: "banquet", date: null, guestCount: 100, locality: null, language: "hi", confidenceBps: 8300 },
   },
+  "ph-en-07": {
+    why: "reads '40 km' as 4 km (a digit slip that lands in the free travel band, so the quote under-prices)",
+    response: { service: "wedding-shoot", date: "2026-12-20", package: "standard", hours: 8, distanceKm: 4, language: "en", confidenceBps: 8700 },
+  },
+  "ph-hg-06": {
+    why: "reads 'pachaas' (50) as 15, which is also a valid distance but a cheaper travel band",
+    response: { service: "wedding-shoot", date: "2026-12-09", package: "standard", hours: 6, distanceKm: 15, language: "hinglish", confidenceBps: 8300 },
+  },
+  "ph-hg-07": {
+    why: "guesses a service from a vague message but is unsure (below the confidence gate)",
+    response: { service: "wedding-shoot", date: null, language: "hinglish", confidenceBps: 5400 },
+  },
 };
 
 /** The raw JSON the scripted model returns for a case. */

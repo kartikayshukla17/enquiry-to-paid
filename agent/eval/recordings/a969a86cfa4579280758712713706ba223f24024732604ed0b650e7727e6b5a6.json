@@ -1,0 +1,27 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Premium package for a wedding shoot on 12 December 2026, we want 10 hours of coverage and the venue is 45 km from your studio.",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "wedding-shoot",
+      "date": "2026-12-12",
+      "language": "en",
+      "package": "premium",
+      "hours": 10,
+      "distanceKm": 45,
+      "confidenceBps": 9000,
+      "intent": "enquiry"
+    }
+  }
+}

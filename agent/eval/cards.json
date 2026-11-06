@@ -1,0 +1,4 @@
+{
+  "comment": "Report order of the fictional rate cards the eval harness runs (rate-cards/<id>.json). Data only: the harness has no per-card code.",
+  "order": ["fictional-banquet", "fictional-banquet-seasonal", "fictional-photographer", "fictional-b2b-supplier", "fictional-contractor"]
+}

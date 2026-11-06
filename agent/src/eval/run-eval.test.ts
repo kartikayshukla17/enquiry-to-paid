@@ -1,12 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDb, type TestDb } from "../ledger/test-db.js";
 import { PROVENANCE_LABEL, runEval, type EvalReport } from "./run-eval.js";
+import { loadSets, scoredFields } from "./sets.js";
 
 let db: TestDb;
 let report: EvalReport;
+let scoredByLang: Record<string, number>;
 beforeAll(async () => {
   db = await createTestDb();
   report = await runEval({ pool: db.pool });
+  scoredByLang = {};
+  for (const c of (await loadSets()).cases) scoredByLang[c.lang] = (scoredByLang[c.lang] ?? 0) + scoredFields(c).length;
 });
 afterAll(async () => {
   await db.drop();
@@ -24,9 +28,9 @@ describe("runEval (the function behind `pnpm eval`)", () => {
   it("reports extraction and pipeline metrics per language, with counts that add up", () => {
     expect(Object.keys(report.languages)).toEqual(["en", "hinglish", "hi"]);
     let total = 0;
-    for (const m of Object.values(report.languages)) {
+    for (const [lang, m] of Object.entries(report.languages)) {
+      expect(m.extraction.fieldsTotal, lang).toBe(scoredByLang[lang]);
       expect(m.cases).toBeGreaterThan(0);
-      expect(m.extraction.fieldsTotal).toBe(m.cases * 5);
       expect(m.extraction.fieldsCorrect).toBeLessThanOrEqual(m.extraction.fieldsTotal);
       expect(m.extraction.schemaValid).toBeLessThanOrEqual(m.cases);
       expect(m.pipeline.outcomeCorrect).toBeLessThanOrEqual(m.cases);
@@ -92,5 +96,41 @@ describe("runEval (the function behind `pnpm eval`)", () => {
         expect(Number.isInteger(v)).toBe(true);
       }
     }
+  });
+
+  describe("per rate card (the card dimension)", () => {
+    it("reports one engine over every card that has labelled cases, in a fixed order", () => {
+      expect(Object.keys(report.cards)).toEqual(["fictional-banquet", "fictional-photographer"]);
+      expect(report.provenance.rateCards.map((c) => c.id)).toEqual(Object.keys(report.cards));
+      for (const c of report.provenance.rateCards) expect(c.hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(Object.values(report.cards).reduce((n, c) => n + c.cases, 0)).toBe(report.overall.cases);
+    });
+
+    it("splits quotes, refusals and clarifications so they add up to the card's cases", () => {
+      for (const [id, c] of Object.entries(report.cases.reduce<Record<string, typeof report.cases>>((a, x) => ({ ...a, [x.card]: [...(a[x.card] ?? []), x] }), {}))) {
+        const m = report.cards[id]!;
+        expect(m.cases, id).toBe(c.length);
+        expect(m.quotes + m.refusals + m.clarifications, id).toBe(m.cases);
+        expect(m.refusalShareBps, id).toBe(Math.round((m.refusals * 10_000) / m.cases));
+      }
+    });
+
+    it("prices photographer enquiries through the same pipeline, in English and Hinglish, with its own bad numbers", () => {
+      const ph = report.cases.filter((c) => c.card === "fictional-photographer");
+      expect(ph.length).toBeGreaterThanOrEqual(8);
+      expect(new Set(ph.map((c) => c.lang))).toEqual(new Set(["en", "hinglish"]));
+      const m = report.cards["fictional-photographer"]!;
+      expect(m.quotes).toBeGreaterThan(0);
+      expect(m.pipeline.wrongPriceCaseIds).toEqual(["ph-en-07", "ph-hg-06"]);
+      expect(m.extraction.perFieldTotal.package).toBeGreaterThan(0);
+      expect(m.extraction.perFieldTotal.guestCount).toBe(0);
+    });
+
+    it("never quotes where the labels say no rule covers the case (any card)", () => {
+      for (const [id, m] of Object.entries(report.cards)) {
+        expect(m.outOfCoverageQuotes, id).toBe(0);
+        expect(m.outOfCoverageCaseIds, id).toEqual([]);
+      }
+    });
   });
 });

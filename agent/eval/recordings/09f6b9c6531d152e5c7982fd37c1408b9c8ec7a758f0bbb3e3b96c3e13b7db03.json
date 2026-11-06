@@ -1,0 +1,26 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Standard package wedding shoot on 20 December 2026, 8 hours, the venue is 40 km away.",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "wedding-shoot",
+      "date": "2026-12-20",
+      "package": "standard",
+      "hours": 8,
+      "distanceKm": 4,
+      "language": "en",
+      "confidenceBps": 8700
+    }
+  }
+}

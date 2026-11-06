@@ -20,11 +20,15 @@ const metricRow = (name: string, m: LangMetrics): string[] => [
   String(m.pipeline.missedQuotes),
 ];
 
+const fieldCell = (m: LangMetrics, f: (typeof FIELD_NAMES)[number]): string =>
+  m.extraction.perFieldTotal[f] === 0 ? "-" : `${m.extraction.perFieldCorrect[f]}/${m.extraction.perFieldTotal[f]}`;
+
 const caseCells = (c: CaseResult): string[] => [
   c.id,
+  c.card,
   c.gold,
   c.got,
-  c.schemaValid ? (c.wrongFields.length ? c.wrongFields.join(", ") : "none") : "schema-invalid (all 5)",
+  c.schemaValid ? (c.wrongFields.length ? c.wrongFields.join(", ") : "none") : `schema-invalid (all ${c.scoredFieldCount})`,
   c.unsafe ? "**UNSAFE QUOTE**" : c.wrongPrice ? "wrong price" : c.outcomeOk ? "ok" : "miss",
 ];
 
@@ -64,25 +68,54 @@ ${wrongPrice.length === 0 ? "" : `Quotes issued at the wrong price (gold says qu
 
 Why these happen: in each unsafe case the recorded model invents or misreads a field (a date for "next Friday", a year the customer never gave) with confidence above the ${r.provenance.lowConfidenceBps} bps gate, and the kernel then prices what it is given. The confidence gate cannot catch a confidently wrong read; only a better extractor, or confirm-back of the date and guest count before quoting, can. Neither exists yet.`);
 
+  const cardRows = Object.entries(r.cards);
+  const ticked = (pick: (share: number) => boolean) => {
+    const ids = cardRows.filter(([, c]) => pick(c.refusalShareBps)).map(([id]) => `\`${id}\``);
+    return ids.length ? ids.join(", ") : "none";
+  };
+  sections.push(`## Results per rate card (generality)
+
+One engine, no per-card code: every row below is the same kernel and pipeline reading a different card file. "Refusal share" is the share of the card's cases that ended in a typed refusal (clarifying questions are not refusals). "Out-of-coverage quotes" counts quotes issued where the labels say the card has no covering rule; it must be 0 on every card.
+
+${table(
+    ["Card", "Cases", "Quotes", "Refusals", "Clarifying questions", "Refusal share", "Gold refusal share", "Out-of-coverage quotes", "Outcome accuracy", "Unsafe quotes"],
+    cardRows.map(([id, c]) => [
+      `\`${id}\``,
+      String(c.cases),
+      String(c.quotes),
+      String(c.refusals),
+      String(c.clarifications),
+      pct(c.refusalShareBps),
+      pct(c.goldRefusalShareBps),
+      `**${c.outOfCoverageQuotes}**`,
+      `${pct(c.pipeline.outcomeAccuracyBps)} (${c.pipeline.outcomeCorrect}/${c.cases})`,
+      `**${c.pipeline.unsafeQuotes}**`,
+    ]),
+  )}
+
+Priced cards (refusal share under 50%): ${ticked((b) => b < 5000)}. Refusal-heavy cards (50% or more): ${ticked((b) => b >= 5000)}.`);
+
   sections.push(`## Extraction field accuracy by field
+
+Each cell is correct/scored. A case scores exactly the fields its gold object names, so a field a card does not use is not counted for that card's cases.
 
 ${table(
     ["Language", ...FIELD_NAMES],
     [
-      ...LANGS.map((l) => [LANG_NAME[l], ...FIELD_NAMES.map((f) => `${r.languages[l].extraction.perFieldCorrect[f]}/${r.languages[l].cases}`)]),
-      ["**All**", ...FIELD_NAMES.map((f) => `${r.overall.extraction.perFieldCorrect[f]}/${r.overall.cases}`)],
+      ...LANGS.map((l) => [LANG_NAME[l], ...FIELD_NAMES.map((f) => fieldCell(r.languages[l], f))]),
+      ["**All**", ...FIELD_NAMES.map((f) => fieldCell(r.overall, f))],
     ],
   )}`);
 
   sections.push(`## Every case
 
-${table(["Case", "Gold outcome", "Got", "Wrong fields", "Verdict"], r.cases.map(caseCells))}`);
+${table(["Case", "Card", "Gold outcome", "Got", "Wrong fields", "Verdict"], r.cases.map(caseCells))}`);
 
   sections.push(`## How this is measured
 
-- **Sets:** \`agent/eval/sets/en.jsonl\`, \`hinglish.jsonl\` (${r.inputs.caseCount} cases total; \`hinglish.jsonl\` also holds the Devanagari cases, \`lang: "hi"\`). Each case has the text, gold fields, and a gold pipeline outcome (quote, clarify, or refuse + reason) against the named fictional card \`${r.provenance.rateCard.id}\` (\`${r.provenance.rateCard.path}\`). A test checks every gold outcome equals what the kernel returns for the gold fields.
+- **Sets:** ${Object.keys(r.inputs.setHashes).map((f) => `\`agent/eval/sets/${f}\``).join(", ")} (${r.inputs.caseCount} cases total; \`hinglish.jsonl\` also holds the Devanagari cases, \`lang: "hi"\`). Each case has the text, gold fields, a card dimension (\`card\`, default the banquet card) and a gold pipeline outcome (quote, clarify, or refuse + reason) against that named fictional card. A test checks every gold outcome equals what the kernel returns for the gold fields on the case's own card.
 - **Labelling convention:** a date with no year is gold-labelled with the next occurrence after the scenario clock (${r.provenance.scenarioNow}); a relative date ("next Friday") or an ambiguous numeric one ("10-11-12") is labelled \`null\` and the right outcome is a clarifying question, because the model is not told today's date.
-- **Extraction metrics:** exact match per field over \`service, date, guestCount, locality, language\` (5 per case; a schema-invalid or failed extraction scores 0 of 5). Schema-valid rate is the share passing the strict validator. Mean confidence is over schema-valid extractions only. All percentages are integer basis points, rounded.
+- **Extraction metrics:** exact match per field over the fields a case's gold names, out of \`${FIELD_NAMES.join(", ")}\` (a schema-invalid or failed extraction scores 0 of that case's fields). Schema-valid rate is the share passing the strict validator. Mean confidence is over schema-valid extractions only. All percentages are integer basis points, rounded.
 - **Pipeline metrics:** each case runs through the real \`handleMessage\` (extract, strict schema, confidence gate at ${r.provenance.lowConfidenceBps} bps, kernel, ledger) on a throwaway database. Outcome accuracy needs the same kind and, for refusals, the same reason. A missing-field refusal counts as "clarify".
 - **Recordings:** \`agent/eval/recordings/\`, seeded by \`pnpm --filter agent exec tsx src/eval/seed.ts\` from \`src/eval/recorded.ts\`. Every case defaults to "the model returned the gold fields at 9000 bps"; the exceptions in that file are the injected mistakes.
 
@@ -93,7 +126,7 @@ ${table(["Case", "Gold outcome", "Got", "Wrong fields", "Verdict"], r.cases.map(
 | Provider / model | \`${r.provenance.provider}\` / \`${r.provenance.modelId}\` (hand-seeded; no network call was made) |
 | Extraction prompt hash | \`${r.provenance.promptHash}\` |
 | Schema version | \`${r.provenance.schemaVersion}\` |
-| Rate card | \`${r.provenance.rateCard.id}\`, hash \`${r.provenance.rateCard.hash}\` |
+${r.provenance.rateCards.map((c) => `| Rate card \`${c.id}\` | \`${c.path}\`, hash \`${c.hash}\` |`).join("\n")}
 | Recordings hash | \`${r.inputs.recordingsHash}\` |
 ${Object.entries(r.inputs.setHashes).map(([f, h]) => `| Set \`${f}\` sha256 | \`${h}\` |`).join("\n")}
 | Baseline | \`agent/eval/baselines/${r.provenance.modelId}.${r.provenance.promptHash8}.json\` |`);
