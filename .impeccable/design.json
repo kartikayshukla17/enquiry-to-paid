@@ -1,0 +1,252 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-07T00:00:00Z",
+  "title": "Design System: Enquiry to Paid",
+  "extensions": {
+    "colorMeta": {
+      "enamel": {
+        "role": "primary",
+        "displayName": "Cobalt Enamel",
+        "canonical": "#0e3a86",
+        "note": "Page ground. Re-declared per board colour: bottle #0c3b2a, sindoor #8a1d12, ink #16150f, peacock #0a5e66, aubergine #40194f.",
+        "tonalRamp": ["#041229", "#07204a", "#0a2c67", "#0e3a86", "#1a4ea8", "#3c6fc4", "#7a9bdc", "#c3d3f1"]
+      },
+      "enamel-deep": {
+        "role": "primary",
+        "displayName": "Deep Cobalt",
+        "canonical": "#072558",
+        "note": "Recessed value: dark panels, input wells, scrollbar track.",
+        "tonalRamp": ["#020b1a", "#041531", "#061d45", "#072558", "#0b3375", "#1a4ea8", "#5b85d0", "#b9cbee"]
+      },
+      "enamel-lit": {
+        "role": "primary",
+        "displayName": "Lit Cobalt",
+        "canonical": "#1a4ea8",
+        "note": "Light colour, not a surface colour. Feeds the sodium pool's lift tint.",
+        "tonalRamp": ["#05112a", "#0a2050", "#0f3574", "#1a4ea8", "#2f69c6", "#5b8bd8", "#92b3e8", "#cfdef6"]
+      },
+      "board": {
+        "role": "neutral",
+        "displayName": "Board Cream",
+        "canonical": "#f3e8d2",
+        "note": "The painted board, and all body copy on the dark ground at 70-90% alpha.",
+        "tonalRamp": ["#3a3123", "#574a35", "#7a6a4e", "#9d8b6c", "#bfae8e", "#d9c8a6", "#f3e8d2", "#fbf5e9"]
+      },
+      "board-dim": {
+        "role": "neutral",
+        "displayName": "Dimmed Board",
+        "canonical": "#d9c8a6",
+        "note": "The one disabled-state value: a board not yet painted.",
+        "tonalRamp": ["#332c1e", "#4f452f", "#726344", "#96835a", "#b8a47c", "#d9c8a6", "#eadcc4", "#f8f1e3"]
+      },
+      "gold": {
+        "role": "secondary",
+        "displayName": "Cadmium Gold",
+        "canonical": "#f8b616",
+        "note": "The single instruction colour. Also selection, caret, scrollbar thumb, focus ring.",
+        "tonalRamp": ["#3b2a02", "#5c4203", "#855f05", "#ad7c08", "#d49a0d", "#f8b616", "#fbcf5e", "#fde8b4"]
+      },
+      "signal": {
+        "role": "tertiary",
+        "displayName": "Vermilion Signal",
+        "canonical": "#e23b1d",
+        "note": "Cost and refusal, on the dark ground only. Never a large fill.",
+        "tonalRamp": ["#380d04", "#551406", "#7a1d09", "#9e2410", "#c32f16", "#e23b1d", "#ee7355", "#f8b7a6"]
+      },
+      "signal-deep": {
+        "role": "tertiary",
+        "displayName": "Brick Signal",
+        "canonical": "#9e2410",
+        "note": "Darkened signal for signal-coloured text on the cream board, where bright vermilion fails 4.5:1. Declared only in the palette blocks, not in @theme, so no Tailwind utility exists for it in this build.",
+        "tonalRamp": ["#2a0a04", "#431008", "#64180b", "#83200e", "#9e2410", "#c43520", "#e07663", "#f4bdb2"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Signwriter's Ink",
+        "canonical": "#0f0e08",
+        "note": "Letterform shadow, text on cream, painted 2-3px borders, ink chips carrying gold type. Dividers at 15-30% alpha.",
+        "tonalRamp": ["#0f0e08", "#201e12", "#36321e", "#4f4a2c", "#6d663e", "#938b58", "#c0b98f", "#e6e2cf"]
+      },
+      "faded": {
+        "role": "neutral",
+        "displayName": "Faded Blue",
+        "canonical": "#86a3d2",
+        "note": "Paint that lost its light: terminal colour of a cooling enquiry, and low-contrast dividers on the dark ground at 25-55% alpha.",
+        "tonalRamp": ["#141f36", "#1f3156", "#2e4779", "#43609b", "#5f7db9", "#86a3d2", "#b0c4e4", "#dce5f4"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Hero headline only. Always carries the painted ink-shadow and cream-highlight treatment." },
+      "headline": { "displayName": "Headline", "purpose": "Section h2, capped at 20-26ch. Closing call runs larger at clamp(2.1rem, 6.4vw, 4.25rem)." },
+      "devanagari": { "displayName": "Devanagari Display", "purpose": "The Hindi line under a display or closing headline, in gold. One per section at most." },
+      "title": { "displayName": "Title", "purpose": "Panel and step headings on cream; definition terms in gold on the dark ground." },
+      "body": { "displayName": "Body", "purpose": "All prose. Lead copy steps to 1.125rem at sm. Measure capped 42-54ch." },
+      "label": { "displayName": "Label", "purpose": "Eyebrow lines on panels, table headers, status badges, chips, trade-strip items. Tracking widens as size drops: 0.06em to 0.18em." },
+      "arabic": { "displayName": "Arabic", "purpose": "Perso-Arabic script items in the language list. Layout must tolerate RTL." },
+      "numeric": { "displayName": "Numeric", "purpose": "Every price, clock time, phone number and benchmark figure, in both Anton and Mukta contexts." }
+    },
+    "shadows": [
+      { "name": "panel-cream", "value": "0 2px 0 rgba(255,255,255,0.35) inset, 0 14px 28px -10px rgba(5,18,44,0.55), 0 3px 7px -3px rgba(5,18,44,0.4)", "purpose": "The painted board laid on the ground. Paired with a 176deg white-to-transparent gloss gradient over the cream fill." },
+      { "name": "panel-dark", "value": "0 1px 0 rgba(255,255,255,0.14) inset, 0 14px 30px -12px rgba(3,12,32,0.7)", "purpose": "Recessed deep-enamel panel, same construction at lower gloss." },
+      { "name": "keyline", "value": "0 0 0 2px var(--color-ink) inset, 0 0 0 7px var(--color-gold) inset", "purpose": "The inset ink-then-gold double border a real board carries. Only on surfaces that represent an actual painted board." },
+      { "name": "button-lift", "value": "0 12px 24px -10px rgba(4,14,38,0.7)", "purpose": "Under the gold primary action only. Removed entirely when disabled." },
+      { "name": "focus-ring", "value": "outline: 3px solid var(--color-gold); outline-offset: 3px", "purpose": "Global focus-visible treatment, token-bound so it retints with the ground." },
+      { "name": "painted-letterform", "value": "text-shadow: 0.052em 0.058em 0 var(--color-ink), -0.016em -0.02em 0 rgba(255,251,240,0.45)", "purpose": "Ink shadow down-right, cream highlight up-left. Type only, never blocks." },
+      { "name": "painted-letterform-gold", "value": "text-shadow: 0.05em 0.055em 0 var(--color-ink), -0.014em -0.018em 0 rgba(255,248,225,0.5)", "purpose": "Gold variant of the painted treatment." },
+      { "name": "painted-letterform-signal", "value": "text-shadow: 0.045em 0.05em 0 var(--color-ink)", "purpose": "Signal variant: ink shadow only, no highlight." }
+    ],
+    "motion": [
+      { "name": "ease-state", "value": "200ms cubic-bezier(0, 0, 0.2, 1)", "purpose": "Button and swatch lift (2px translateY) and colour swaps. 150ms for swatches." },
+      { "name": "cool", "value": "cool 5.5s cubic-bezier(0.16, 1, 0.3, 1) infinite alternate", "purpose": "The only looping animation: a timestamp going from gold with an 18px warm glow to faded blue. Staggered 0.5s per card. Removed under prefers-reduced-motion, with the faded colour applied statically." },
+      { "name": "marquee", "value": "marquee 34s infinite linear", "purpose": "The trade strip, zero gap, pauses on hover." },
+      { "name": "hero-arrival", "value": "BlurFade, delays 0.05s-0.72s, offsets 6-18px, blur 4-10px", "purpose": "Entrance animation, hero only. No section below the hero has an entrance." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "container", "value": "78rem" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single gold instruction, with the authored brush icon on its trailing edge. Lifts 2px on hover; never changes colour.",
+      "html": "<a class=\"ds-btn-primary\" href=\"#rate-card\">Send your rate card<svg class=\"ds-btn-primary__icon\" viewBox=\"0 0 20 20\" fill=\"none\" aria-hidden=\"true\"><path d=\"M13.5 2.5l4 4-7.5 7.5-4-4 7.5-7.5Z\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linejoin=\"round\"/><path d=\"M6 10l-2.5 6.5L10 14\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"square\"/></svg></a>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 0.625rem; background: var(--color-gold, #f8b616); color: var(--color-ink, #0f0e08); font-family: Anton, 'Anton Fallback', 'Arial Narrow', sans-serif; font-size: 1.125rem; text-transform: uppercase; letter-spacing: 0.015em; padding: 0.875rem 1.5rem; border: none; border-radius: 0; text-decoration: none; box-shadow: 0 12px 24px -10px rgba(4,14,38,0.7); transition: transform 200ms cubic-bezier(0,0,0.2,1); } .ds-btn-primary__icon { width: 1.25rem; height: 1.25rem; } .ds-btn-primary:hover { transform: translateY(-2px); } .ds-btn-primary:active { transform: translateY(0); } .ds-btn-primary:focus-visible { outline: 3px solid var(--color-gold, #f8b616); outline-offset: 3px; } .ds-btn-primary[aria-disabled=\"true\"] { background: var(--color-board-dim, #d9c8a6); color: rgba(15,14,8,0.7); box-shadow: none; transform: none; cursor: not-allowed; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary action on a cream panel. Inverts to ink with gold type on hover.",
+      "html": "<button class=\"ds-btn-outline\" type=\"button\">Start over</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; gap: 0.5rem; background: transparent; color: var(--color-ink, #0f0e08); font-family: Anton, 'Anton Fallback', 'Arial Narrow', sans-serif; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.06em; padding: 0.625rem 1.25rem; border: 2px solid var(--color-ink, #0f0e08); border-radius: 0; transition: background-color 200ms cubic-bezier(0,0,0.2,1), color 200ms cubic-bezier(0,0,0.2,1); } .ds-btn-outline:hover { background: var(--color-ink, #0f0e08); color: var(--color-gold, #f8b616); } .ds-btn-outline:focus-visible { outline: 3px solid var(--color-gold, #f8b616); outline-offset: 3px; }"
+    },
+    {
+      "name": "Phone Input",
+      "kind": "input",
+      "refersTo": "input-tel",
+      "description": "A slot cut into the ground: 3px cream border over a deep-enamel well, tabular figures, gold caret.",
+      "html": "<input class=\"ds-input-tel\" type=\"tel\" inputmode=\"tel\" placeholder=\"+91 98••• •••••\" aria-label=\"Your WhatsApp number\" />",
+      "css": ".ds-input-tel { width: 100%; background: var(--color-enamel-deep, #072558); color: var(--color-board, #f3e8d2); font-family: Mukta, 'Mukta Fallback', system-ui, sans-serif; font-size: 1.125rem; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; padding: 0.875rem 1rem; border: 3px solid rgba(243,232,210,0.7); border-radius: 0; caret-color: var(--color-gold, #f8b616); } .ds-input-tel::placeholder { color: rgba(243,232,210,0.65); } .ds-input-tel:focus-visible { outline: 3px solid var(--color-gold, #f8b616); outline-offset: 3px; } .ds-input-tel[aria-invalid=\"true\"] { border-color: var(--color-signal, #e23b1d); }"
+    },
+    {
+      "name": "Cream Panel",
+      "kind": "card",
+      "refersTo": "panel-board",
+      "description": "The painted board: gloss band across the top edge, wet highlight inset, soft cast shadow. Zero radius, no outside border.",
+      "html": "<div class=\"ds-panel\"><p class=\"ds-panel__eyebrow\">What outcome pricing looks like elsewhere</p><p class=\"ds-panel__body\">Outcome pricing exists, but only for support resolutions and leads.</p></div>",
+      "css": ".ds-panel { background: linear-gradient(176deg, rgba(255,255,255,0.5), rgba(255,255,255,0) 38%), var(--color-board, #f3e8d2); color: var(--color-ink, #0f0e08); padding: 1.75rem; border-radius: 0; box-shadow: 0 2px 0 rgba(255,255,255,0.35) inset, 0 14px 28px -10px rgba(5,18,44,0.55), 0 3px 7px -3px rgba(5,18,44,0.4); } .ds-panel__eyebrow { margin: 0; font-family: Anton, 'Anton Fallback', 'Arial Narrow', sans-serif; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.14em; color: rgba(15,14,8,0.7); } .ds-panel__body { margin: 1.5rem 0 0; font-family: Mukta, 'Mukta Fallback', system-ui, sans-serif; font-size: 0.975rem; line-height: 1.4; color: rgba(15,14,8,0.85); }"
+    },
+    {
+      "name": "Rate Board",
+      "kind": "custom",
+      "refersTo": "panel-board",
+      "description": "The system's signature object: a keylined cream board where an enquiry becomes a painted price, with an authored brush stroke under the number and the primary action on the bottom edge.",
+      "html": "<div class=\"ds-board\"><p class=\"ds-board__eyebrow\">Kohli Banquets · rate board</p><div class=\"ds-board__msg\"><p class=\"ds-board__msgtext\">18 Dec chahiye, 250 log honge. Veg only. Budget kya rahega?</p><p class=\"ds-board__time\">9:41 pm · WhatsApp</p></div><p class=\"ds-board__label\">Saturday, December rate</p><p class=\"ds-board__price\"><span class=\"ds-board__rupee\">₹</span>3,80,000<svg class=\"ds-board__stroke\" viewBox=\"0 0 320 22\" preserveAspectRatio=\"none\" fill=\"none\" aria-hidden=\"true\"><path d=\"M3 9C58 3 118 1.5 178 3.5C236 5.4 282 5 316 2.5L316 8.5C282 12.5 236 14.2 178 12.5C118 10.7 58 12 4 18.5Z\" fill=\"currentColor\"/><path d=\"M236 5.8C268 5.2 296 4.2 316 2.9L316 7.4C296 9.6 268 11 236 11.6Z\" fill=\"currentColor\" opacity=\"0.5\"/></svg></p><div class=\"ds-board__foot\"><a class=\"ds-board__cta\" href=\"#rate-card\">Send your rate card</a></div></div>",
+      "css": ".ds-board { position: relative; background: linear-gradient(176deg, rgba(255,255,255,0.5), rgba(255,255,255,0) 38%), var(--color-board, #f3e8d2); color: var(--color-ink, #0f0e08); padding: 1.75rem; border-radius: 0; box-shadow: 0 0 0 2px var(--color-ink, #0f0e08) inset, 0 0 0 7px var(--color-gold, #f8b616) inset, 0 14px 28px -10px rgba(5,18,44,0.55); } .ds-board__eyebrow { margin: 0; font-family: Anton, 'Anton Fallback', 'Arial Narrow', sans-serif; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.18em; color: rgba(15,14,8,0.65); } .ds-board__msg { margin-top: 1.25rem; padding-bottom: 1.25rem; border-bottom: 2px dashed rgba(15,14,8,0.25); } .ds-board__msgtext { margin: 0; background: rgba(15,14,8,0.08); padding: 0.75rem 1rem; font-family: Mukta, 'Mukta Fallback', system-ui, sans-serif; font-size: 0.95rem; line-height: 1.35; max-width: 92%; } .ds-board__time { margin: 0.375rem 0 0; font-family: Mukta, 'Mukta Fallback', system-ui, sans-serif; font-size: 0.75rem; font-variant-numeric: tabular-nums; color: rgba(15,14,8,0.65); } .ds-board__label { margin: 1.25rem 0 0; font-family: Anton, 'Anton Fallback', 'Arial Narrow', sans-serif; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.14em; color: rgba(15,14,8,0.7); } .ds-board__price { position: relative; display: inline-flex; align-items: baseline; gap: 0.25rem; margin: 0.25rem 0 0; font-family: Anton, 'Anton Fallback', 'Arial Narrow', sans-serif; font-size: clamp(2.4rem, 8vw, 3.9rem); line-height: 1; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; } .ds-board__rupee { font-size: 0.55em; color: rgba(15,14,8,0.75); } .ds-board__stroke { position: absolute; left: 0; bottom: -0.5rem; width: 100%; height: 0.75rem; color: var(--color-gold, #f8b616); pointer-events: none; } .ds-board__foot { margin-top: 1.75rem; padding-top: 1.25rem; border-top: 2px solid rgba(15,14,8,0.8); } .ds-board__cta { display: inline-flex; background: var(--color-gold, #f8b616); color: var(--color-ink, #0f0e08); font-family: Anton, 'Anton Fallback', 'Arial Narrow', sans-serif; font-size: 1.125rem; text-transform: uppercase; letter-spacing: 0.015em; padding: 0.875rem 1.5rem; text-decoration: none; box-shadow: 0 12px 24px -10px rgba(4,14,38,0.7); transition: transform 200ms cubic-bezier(0,0,0.2,1); } .ds-board__cta:hover { transform: translateY(-2px); }"
+    },
+    {
+      "name": "Dark Panel",
+      "kind": "card",
+      "refersTo": "panel-dark",
+      "description": "The recessed variant, for content that is losing or has lost its value. Carries the cooling timestamp.",
+      "html": "<div class=\"ds-panel-dark\"><p class=\"ds-panel-dark__time\">11:22 pm</p><p class=\"ds-panel-dark__text\">Pre-wedding shoot rate kya hai?</p><p class=\"ds-panel-dark__fate\">never answered</p></div>",
+      "css": ".ds-panel-dark { display: flex; flex-direction: column; gap: 0.75rem; background: linear-gradient(176deg, rgba(255,255,255,0.11), rgba(255,255,255,0) 40%), var(--color-enamel-deep, #072558); color: var(--color-board, #f3e8d2); padding: 1.25rem; border-radius: 0; box-shadow: 0 1px 0 rgba(255,255,255,0.14) inset, 0 14px 30px -12px rgba(3,12,32,0.7); } .ds-panel-dark__time { margin: 0; font-family: Anton, 'Anton Fallback', 'Arial Narrow', sans-serif; font-size: 1.25rem; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; animation: ds-cool 5.5s cubic-bezier(0.16,1,0.3,1) infinite alternate; } @keyframes ds-cool { 0%, 14% { color: var(--color-gold, #f8b616); text-shadow: 0 0 18px rgba(248,182,22,0.55); } 100% { color: var(--color-faded, #86a3d2); text-shadow: none; } } @media (prefers-reduced-motion: reduce) { .ds-panel-dark__time { animation: none; color: var(--color-faded, #86a3d2); } } .ds-panel-dark__text { margin: 0; font-family: Mukta, 'Mukta Fallback', system-ui, sans-serif; font-size: 0.95rem; line-height: 1.35; color: rgba(243,232,210,0.85); } .ds-panel-dark__fate { margin: 0.75rem 0 0; font-family: Mukta, 'Mukta Fallback', system-ui, sans-serif; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-signal, #e23b1d); }"
+    },
+    {
+      "name": "Painted Headline",
+      "kind": "custom",
+      "refersTo": "display",
+      "description": "Condensed caps with an ink shadow thrown down-right and a thin cream highlight up-left. Type only; no block wears this.",
+      "html": "<h1 class=\"ds-painted\">The message you missed at <span class=\"ds-painted--gold\">9:40</span> booked somewhere else.</h1>",
+      "css": ".ds-painted { margin: 0; font-family: Anton, 'Anton Fallback', 'Arial Narrow', sans-serif; font-size: clamp(2.5rem, 7.6vw, 5.5rem); line-height: 0.9; letter-spacing: -0.025em; text-transform: uppercase; text-wrap: balance; color: var(--color-board, #f3e8d2); text-shadow: 0.052em 0.058em 0 var(--color-ink, #0f0e08), -0.016em -0.02em 0 rgba(255,251,240,0.45); } .ds-painted--gold { color: var(--color-gold, #f8b616); text-shadow: 0.05em 0.055em 0 var(--color-ink, #0f0e08), -0.014em -0.018em 0 rgba(255,248,225,0.5); }"
+    },
+    {
+      "name": "Chips and Badges",
+      "kind": "chip",
+      "refersTo": "chip-ink",
+      "description": "Three squared variants: ink fill with gold type for an assertion the system stands behind, a signal outline for a refusal, a cream outline for future work.",
+      "html": "<div class=\"ds-chips\"><span class=\"ds-chip ds-chip--ink\">Quoted from your rules</span><span class=\"ds-chip ds-chip--refusal\">Refused to guess · you were told</span><span class=\"ds-chip ds-chip--next\">Next</span></div>",
+      "css": ".ds-chips { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; } .ds-chip { display: inline-block; font-family: Anton, 'Anton Fallback', 'Arial Narrow', sans-serif; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0.25rem 0.75rem; border-radius: 0; } .ds-chip--ink { background: var(--color-ink, #0f0e08); color: var(--color-gold, #f8b616); } .ds-chip--refusal { background: transparent; color: var(--color-signal, #e23b1d); border: 2px solid var(--color-signal, #e23b1d); } .ds-chip--next { background: transparent; color: rgba(243,232,210,0.8); border: 2px solid rgba(243,232,210,0.45); }"
+    },
+    {
+      "name": "Trade Strip",
+      "kind": "custom",
+      "refersTo": "trade-strip",
+      "description": "The one place gold covers a large area: a full-bleed band with 3px ink rules, ink caps, and a small vermilion star between items. Pauses on hover.",
+      "html": "<div class=\"ds-strip\"><div class=\"ds-strip__track\"><span class=\"ds-strip__item\">Banquet halls<svg class=\"ds-strip__star\" viewBox=\"0 0 14 14\" fill=\"none\" aria-hidden=\"true\"><path d=\"M7 0.5l1.6 4.3L13 6l-4.4 1.2L7 13.5 5.4 7.2 1 6l4.4-1.2L7 0.5Z\" fill=\"currentColor\"/></svg></span><span class=\"ds-strip__item\">Cafés<svg class=\"ds-strip__star\" viewBox=\"0 0 14 14\" fill=\"none\" aria-hidden=\"true\"><path d=\"M7 0.5l1.6 4.3L13 6l-4.4 1.2L7 13.5 5.4 7.2 1 6l4.4-1.2L7 0.5Z\" fill=\"currentColor\"/></svg></span><span class=\"ds-strip__item\">Photo studios<svg class=\"ds-strip__star\" viewBox=\"0 0 14 14\" fill=\"none\" aria-hidden=\"true\"><path d=\"M7 0.5l1.6 4.3L13 6l-4.4 1.2L7 13.5 5.4 7.2 1 6l4.4-1.2L7 0.5Z\" fill=\"currentColor\"/></svg></span></div></div>",
+      "css": ".ds-strip { overflow: hidden; background: var(--color-gold, #f8b616); border-top: 3px solid var(--color-ink, #0f0e08); border-bottom: 3px solid var(--color-ink, #0f0e08); padding: 0.875rem 0; } .ds-strip__track { display: flex; width: max-content; animation: ds-marquee 34s linear infinite; } .ds-strip:hover .ds-strip__track { animation-play-state: paused; } @keyframes ds-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } } .ds-strip__item { display: flex; align-items: center; gap: 1.75rem; padding: 0 1.75rem; font-family: Anton, 'Anton Fallback', 'Arial Narrow', sans-serif; font-size: 1.25rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-ink, #0f0e08); white-space: nowrap; } .ds-strip__star { width: 0.875rem; height: 0.875rem; flex-shrink: 0; color: var(--color-signal, #e23b1d); } @media (prefers-reduced-motion: reduce) { .ds-strip__track { animation: none; } }"
+    },
+    {
+      "name": "Palette Switcher",
+      "kind": "nav",
+      "refersTo": "panel-board",
+      "description": "Fixed cream panel holding six squared ground swatches, each with a gold bar on its bottom edge. The active one gets an ink border plus an offset cream ring.",
+      "html": "<div class=\"ds-palette\"><button class=\"ds-palette__label\" type=\"button\">Board colour</button><div class=\"ds-palette__row\" role=\"group\" aria-label=\"Board colour\"><button class=\"ds-swatch ds-swatch--on\" type=\"button\" aria-pressed=\"true\" style=\"background:#0e3a86\"><span class=\"ds-swatch__gold\" style=\"background:#f8b616\"></span><span class=\"ds-swatch__ring\" style=\"border-color:#f3e8d2\"></span></button><button class=\"ds-swatch\" type=\"button\" aria-pressed=\"false\" style=\"background:#0c3b2a\"><span class=\"ds-swatch__gold\" style=\"background:#f2c33c\"></span></button><button class=\"ds-swatch\" type=\"button\" aria-pressed=\"false\" style=\"background:#8a1d12\"><span class=\"ds-swatch__gold\" style=\"background:#f7c21d\"></span></button><button class=\"ds-swatch\" type=\"button\" aria-pressed=\"false\" style=\"background:#16150f\"><span class=\"ds-swatch__gold\" style=\"background:#e2b23a\"></span></button><button class=\"ds-swatch\" type=\"button\" aria-pressed=\"false\" style=\"background:#0a5e66\"><span class=\"ds-swatch__gold\" style=\"background:#f6c53e\"></span></button><button class=\"ds-swatch\" type=\"button\" aria-pressed=\"false\" style=\"background:#40194f\"><span class=\"ds-swatch__gold\" style=\"background:#f3c04a\"></span></button></div></div>",
+      "css": ".ds-palette { display: inline-flex; align-items: center; gap: 0.75rem; background: linear-gradient(176deg, rgba(255,255,255,0.5), rgba(255,255,255,0) 38%), var(--color-board, #f3e8d2); padding: 0.625rem 0.75rem; border-radius: 0; box-shadow: 0 2px 0 rgba(255,255,255,0.35) inset, 0 14px 28px -10px rgba(5,18,44,0.55); } .ds-palette__label { background: none; border: none; font-family: Anton, 'Anton Fallback', 'Arial Narrow', sans-serif; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.12em; color: rgba(15,14,8,0.7); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; cursor: pointer; transition: color 150ms cubic-bezier(0,0,0.2,1); } .ds-palette__label:hover { color: var(--color-ink, #0f0e08); } .ds-palette__row { display: flex; align-items: center; gap: 0.375rem; } .ds-swatch { position: relative; width: 2rem; height: 2rem; flex-shrink: 0; border: 2px solid rgba(15,14,8,0.25); border-radius: 0; padding: 0; cursor: pointer; transition: transform 150ms cubic-bezier(0,0,0.2,1); } .ds-swatch:hover { transform: translateY(-2px); } .ds-swatch--on { border-color: var(--color-ink, #0f0e08); } .ds-swatch__gold { position: absolute; left: 0; right: 0; bottom: 0; height: 0.5rem; } .ds-swatch__ring { position: absolute; inset: -5px; border: 2px solid; } .ds-swatch:focus-visible { outline: 3px solid var(--color-gold, #f8b616); outline-offset: 3px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Sign Painter's Board",
+    "overview": "Enamel on tin. The system is built from the hand-painted trade boards that hang above the businesses this product is sold to — banquet halls, studios, salons — and it behaves like paint rather than like glass. A dark enamel ground covers roughly 60% of any screen; a cream board panel carries the content that matters on roughly 30%; cadmium gold and vermilion are the signal, held to the remaining 10%. Light in this world is a single warm sodium-vapour pool from above, not a rim glow and not a gradient mesh. Depth comes from paint sitting proud of the ground: a gloss band across a panel's top edge, an offset cast shadow below it, and an inset ink-and-gold keyline where a real board carries its border.\n\nLetterforms are the system's most load-bearing material. Display type is condensed caps with an ink shadow thrown down-right and a thin cream highlight up-left — the actual grammar a sign painter uses to make lettering stand off a wall. That treatment belongs to type and only to type; no block, panel, or button wears it. The page carries four scripts by design (Latin, Devanagari, Perso-Arabic, Malayalam) because the audience reads them, so type coverage is a structural requirement rather than a nicety.\n\nThe ground is user-selectable: six enamel grounds a real shop would stock, every one of them dark, because the cream lettering and the cream panels depend on a dark field to read. The palette switcher is part of the system, not a demo toy; every colour token including the signal-on-cream variant and the four ambient-light tints is redefined per ground. The build explicitly refuses the dark-SaaS treatment: no glass, no neon on charcoal, no violet gradient, no soft 12px radius everywhere.",
+    "keyCharacteristics": [
+      "Dark enamel ground at ~60%, cream board at ~30%, gold and vermilion signal at ~10%",
+      "Zero corner radius on every surface; squared edges, painted borders",
+      "Painted letterform shadow and highlight on display type only",
+      "One fixed sodium-vapour light pool; no per-element glow",
+      "Six interchangeable dark grounds, each retinting the whole token set",
+      "Tabular figures wherever money or clock time appears",
+      "Motion is scarce: hero arrival, one cooling loop, one trade marquee"
+    ],
+    "rules": [
+      { "name": "The Dark Ground Rule", "body": "Every ground in the system is dark. The cream board, the painted highlight, and the gold signal all depend on it; a light ground breaks all three at once. A new palette that is not dark is not a palette in this system.", "section": "colors" },
+      { "name": "The One Instruction Rule", "body": "Gold marks the single next action on a surface and the two places the brand speaks (the Devanagari line, the trade strip). If a screen has two gold calls to action, one of them is wrong.", "section": "colors" },
+      { "name": "The Signal-On-Cream Rule", "body": "Signal-coloured text on the cream board uses the brick variant, never the bright vermilion. Vermilion is for the dark ground only.", "section": "colors" },
+      { "name": "The Light-Is-One-Lamp Rule", "body": "Ambient light is one fixed sodium pool composed of three radial tints plus one foot-glow at the closing section. Individual elements do not glow, and no element gets its own halo.", "section": "colors" },
+      { "name": "The Paint-Only-Letters Rule", "body": "The painted ink shadow and cream highlight apply to type and nothing else. A panel, button, chip or image with a hard offset shadow is not this world — that is the costume version of it.", "section": "typography" },
+      { "name": "The Script-Coverage Rule", "body": "Latin and Devanagari run through Mukta; Devanagari display runs through Yatra One; Perso-Arabic runs through Cairo. A new surface adding a script must add the face, not let the browser substitute. Layout must tolerate RTL.", "section": "typography" },
+      { "name": "The Measure Rule", "body": "Prose carries an explicit max-width in ch. Nothing in this system runs full container width as a paragraph.", "section": "typography" },
+      { "name": "The One Board Rule", "body": "Related steps live on one panel divided by dashed ink keylines. Reach for a second panel only when the content is genuinely a different board.", "section": "layout" },
+      { "name": "The Safe-Gutter Rule", "body": "Horizontal padding and fixed-element insets are always max(<value>, env(safe-area-inset-*)). The audience is on a phone, one-handed.", "section": "layout" },
+      { "name": "The No-Glass Rule", "body": "No backdrop blur, no translucent frosted surfaces, no neon rim light. Depth is gloss, highlight and cast shadow — the properties of wet enamel.", "section": "elevation" },
+      { "name": "The Keyline-Means-Board Rule", "body": "The inset ink-and-gold keyline marks a surface that represents an actual painted board. A generic content panel gets the gloss and the cast shadow without it.", "section": "elevation" },
+      { "name": "The Zero-Radius Rule", "body": "Nothing in this system has rounded corners. A radius on a panel, button, chip or avatar reads as a web app and breaks the material.", "section": "shapes" },
+      { "name": "The Border-Does-The-Work Rule", "body": "Separation comes from a painted rule — 2–3px solid for structure, dashed ink for internal division — not from radius, not from a drop shadow between siblings.", "section": "shapes" },
+      { "name": "The One-Arrival Rule", "body": "Entrance animation happens once, on the hero. Sections below do not fade in as you scroll. A page where every section arrives is a page that never settles.", "section": "components" }
+    ],
+    "dos": [
+      "Do keep the ground dark, the cream board at roughly 30% of the surface, and gold plus vermilion inside roughly 10%.",
+      "Do use the painted shadow-and-highlight treatment on display and headline type, and only there.",
+      "Do set every surface at zero radius and let 2–3px painted borders and dashed ink rules do the separating.",
+      "Do use the brick signal variant for signal-coloured text on the cream board, and bright vermilion only on the dark ground.",
+      "Do put the primary action on the bottom edge of the board that carries the number, above a solid 2px ink rule.",
+      "Do set every price, time, phone number and benchmark figure in tabular figures.",
+      "Do cap prose measure in ch and set each language's text in the font that covers its script.",
+      "Do read every colour, including browser-chrome colours, from the palette tokens so a new ground retints the whole surface.",
+      "Do give any new looping or revealing animation a prefers-reduced-motion branch that preserves the meaning statically.",
+      "Do draw new icons as authored SVG at 1.75–2.25px stroke with square caps."
+    ],
+    "donts": [
+      "Don't introduce a light ground. The cream board, the painted highlight and the gold signal all fail on one.",
+      "Don't put a radius on anything. No panel, button, chip, input or avatar.",
+      "Don't give a panel, button or image a hard offset shadow — that treatment belongs to letterforms. Panels get gloss plus a soft cast shadow.",
+      "Don't add backdrop blur, frosted glass, neon rim light, or a violet gradient. The build exists to refuse the dark-SaaS page.",
+      "Don't put two gold calls to action on one surface.",
+      "Don't use bright vermilion as a large fill, or as text on cream.",
+      "Don't add a per-section entrance animation, a per-element glow, or a second ambient light source.",
+      "Don't ship an icon from a library or a Unicode glyph where an icon belongs; the icon set is authored SVG.",
+      "Don't route the @theme font families back through next/font's var(--font-*) variables — that indirection silently fell back to system faces.",
+      "Don't add a system display face or a generic sans as a display fallback beyond the chain already set.",
+      "Don't split a sequence of related steps into separate cards when one divided board will carry them."
+    ],
+    "knownInconsistencies": [
+      "signal-deep has no utility: the token is declared only inside the :root[data-palette] blocks and never in @theme, so Tailwind generates no text-signal-deep or bg-signal-deep class. The pipeline's 'today' lines, the comparison's cross marks, and the status section's 'now' badge and 'nothing to log into' chip ship with no colour applied and inherit instead. The token's intent is correct and is recorded; the wiring is not. Fix by adding --color-signal-deep to @theme, not by changing the usages.",
+      "One hard-coded green: the comparison's affirmative tick uses a literal #1b6b3a, outside the palette, which does not retint with the ground. It is not a system token and should not be copied.",
+      "Vestigial shadcn token block: the default shadcn/Radix neutral scale (--background, --primary, --chart-*, --sidebar-*, light and .dark) is still declared in globals.css and referenced by @theme inline, but no shipped surface uses it. Dead weight, not a second system.",
+      "Duplicated colour declarations: the enamel tokens are declared twice, once in @theme and again in the default :root palette block. The palette block is the effective source of truth for Cobalt; the @theme copy exists so Tailwind generates the utilities."
+    ]
+  }
+}

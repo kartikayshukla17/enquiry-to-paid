@@ -1,0 +1,418 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --animate-marquee: marquee var(--duration) infinite linear;
+  --animate-marquee-vertical: marquee-vertical var(--duration) linear infinite;
+  --animate-shine: shine var(--duration) infinite linear;
+  @keyframes marquee {
+  from {
+    transform: translateX(0);
+    }
+  to {
+    transform: translateX(calc(-100% - var(--gap)));
+    }
+  }
+  @keyframes marquee-vertical {
+  from {
+    transform: translateY(0);
+    }
+  to {
+    transform: translateY(calc(-100% - var(--gap)));
+    }
+  }
+  @keyframes shine {
+  0% {
+    background-position: 0% 0%;
+    }
+  50% {
+    background-position: 100% 100%;
+    }
+  to {
+    background-position: 0% 0%;
+    }
+  }
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    @apply bg-background text-foreground;
+  }
+}
+/* ─────────────────────────────────────────────────────────────
+   THE SIGN PAINTER'S BOARD
+   Enamel on tin. 60% cobalt ground, 30% cream board, 10% cadmium
+   and vermilion signal. Light is sodium vapour pooling on gloss.
+   ───────────────────────────────────────────────────────────── */
+@theme {
+  --color-enamel: #0e3a86;
+  --color-enamel-deep: #072558;
+  --color-enamel-lit: #1a4ea8;
+  --color-board: #f3e8d2;
+  --color-board-dim: #d9c8a6;
+  --color-signal: #e23b1d;
+  --color-signal-deep: #9e2410;
+  --color-gold: #f8b616;
+  --color-ink: #0f0e08;
+  --color-faded: #86a3d2;
+
+  --font-display: "Anton", "Anton Fallback", "Arial Narrow", sans-serif;
+  --font-deva: "Yatra One", "Yatra One Fallback", serif;
+  --font-body: "Mukta", "Mukta Fallback", system-ui, sans-serif;
+  --font-arabic: "Cairo", "Cairo Fallback", system-ui, sans-serif;
+}
+
+/* unlayered: wins over shadcn's @layer base */
+html {
+  scrollbar-color: var(--color-gold) var(--color-enamel-deep);
+  scrollbar-width: thin;
+}
+body {
+  background-color: var(--color-enamel);
+  color: var(--color-board);
+  font-family: var(--font-body);
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+::selection {
+  background: var(--color-gold);
+  color: var(--color-ink);
+}
+::-webkit-scrollbar {
+  width: 11px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-enamel-deep);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-gold);
+  border: 3px solid var(--color-enamel-deep);
+  border-radius: 999px;
+}
+:focus-visible {
+  outline: 3px solid var(--color-gold);
+  outline-offset: 3px;
+}
+input,
+textarea {
+  caret-color: var(--color-gold);
+}
+
+/* Painted letterforms: ink shadow down-right, cream highlight up-left.
+   This is the world's actual grammar, not a block-shadow costume. */
+.painted {
+  color: var(--color-board);
+  text-shadow:
+    0.052em 0.058em 0 var(--color-ink),
+    -0.016em -0.02em 0 rgba(255, 251, 240, 0.45);
+}
+.painted-gold {
+  color: var(--color-gold);
+  text-shadow:
+    0.05em 0.055em 0 var(--color-ink),
+    -0.014em -0.018em 0 rgba(255, 248, 225, 0.5);
+}
+.painted-signal {
+  color: var(--color-signal);
+  text-shadow: 0.045em 0.05em 0 var(--color-ink);
+}
+
+/* Enamel panel: raised paint with a gloss band across the top edge. */
+.panel {
+  background:
+    linear-gradient(176deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 38%),
+    var(--color-board);
+  color: var(--color-ink);
+  box-shadow:
+    0 2px 0 rgba(255, 255, 255, 0.35) inset,
+    0 14px 28px -10px rgba(5, 18, 44, 0.55),
+    0 3px 7px -3px rgba(5, 18, 44, 0.4);
+}
+.panel-dark {
+  background:
+    linear-gradient(176deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0) 40%),
+    var(--color-enamel-deep);
+  color: var(--color-board);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.14) inset,
+    0 14px 30px -12px rgba(3, 12, 32, 0.7);
+}
+
+/* Painted keyline: the inset border every real board carries. */
+.keyline {
+  box-shadow: 0 0 0 2px var(--color-ink) inset, 0 0 0 7px var(--color-gold) inset;
+}
+
+/* Sodium-vapour pool. One fixed warm light, not a rim glow. */
+.sodium {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(70rem 42rem at 50% -14%, var(--glow-warm), transparent 62%),
+    radial-gradient(44rem 44rem at 88% 8%, var(--glow-signal), transparent 65%),
+    radial-gradient(60rem 38rem at 12% 42%, var(--glow-lift), transparent 70%);
+}
+.sodium-low {
+  position: absolute;
+  inset: auto 0 -20% 0;
+  height: 60rem;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(52rem 30rem at 50% 100%, var(--glow-foot), transparent 68%);
+}
+
+.nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* A cooling enquiry: paint losing its light. */
+@keyframes cool {
+  0%, 14% {
+    color: var(--color-gold);
+    text-shadow: 0 0 18px rgba(248, 182, 22, 0.55);
+  }
+  100% {
+    color: var(--color-faded);
+    text-shadow: none;
+  }
+}
+.cooling {
+  animation: cool 5.5s cubic-bezier(0.16, 1, 0.3, 1) infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cooling {
+    animation: none;
+    color: var(--color-faded);
+  }
+  .sodium {
+    background: radial-gradient(70rem 42rem at 50% -14%, var(--glow-warm), transparent 62%);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   BOARD COLOURS
+   Six enamel grounds a real sign painter would have in the shop.
+   Every one keeps a dark ground: the cream lettering and the
+   panels depend on it. Default (no attribute) is Cobalt.
+   ───────────────────────────────────────────────────────────── */
+:root[data-palette="cobalt"] {
+  --color-signal-deep: #9e2410;
+  --color-enamel: #0e3a86;
+  --color-enamel-deep: #072558;
+  --color-enamel-lit: #1a4ea8;
+  --color-board: #f3e8d2;
+  --color-board-dim: #d9c8a6;
+  --color-signal: #e23b1d;
+  --color-gold: #f8b616;
+  --color-ink: #0f0e08;
+  --color-faded: #86a3d2;
+  --glow-warm: rgba(248, 182, 22, 0.3);
+  --glow-signal: rgba(226, 59, 29, 0.14);
+  --glow-lift: rgba(26, 78, 168, 0.55);
+  --glow-foot: rgba(248, 182, 22, 0.16);
+}
+
+:root[data-palette="bottle"] {
+  --color-signal-deep: #9c3410;
+  --color-enamel: #0c3b2a;
+  --color-enamel-deep: #052217;
+  --color-enamel-lit: #14543c;
+  --color-board: #f1ead1;
+  --color-board-dim: #d2c7a3;
+  --color-signal: #e2501d;
+  --color-gold: #f2c33c;
+  --color-ink: #0a0d08;
+  --color-faded: #7fab92;
+  --glow-warm: rgba(242, 195, 60, 0.28);
+  --glow-signal: rgba(226, 80, 29, 0.13);
+  --glow-lift: rgba(20, 84, 60, 0.6);
+  --glow-foot: rgba(242, 195, 60, 0.15);
+}
+
+:root[data-palette="sindoor"] {
+  --color-signal-deep: #115f57;
+  --color-enamel: #8a1d12;
+  --color-enamel-deep: #4e0d06;
+  --color-enamel-lit: #ab2d1c;
+  --color-board: #f6ead3;
+  --color-board-dim: #dbc7a4;
+  --color-signal: #1c7f74;
+  --color-gold: #f7c21d;
+  --color-ink: #190603;
+  --color-faded: #d59b8c;
+  --glow-warm: rgba(247, 194, 29, 0.26);
+  --glow-signal: rgba(28, 127, 116, 0.16);
+  --glow-lift: rgba(171, 45, 28, 0.55);
+  --glow-foot: rgba(247, 194, 29, 0.15);
+}
+
+:root,
+:root[data-palette="ink"] {
+  --color-signal-deep: #97290f;
+  --color-enamel: #16150f;
+  --color-enamel-deep: #090804;
+  --color-enamel-lit: #262418;
+  --color-board: #f4ecd8;
+  --color-board-dim: #cfc4a8;
+  --color-signal: #d8411f;
+  --color-gold: #e2b23a;
+  --color-ink: #0a0906;
+  --color-faded: #9a9480;
+  --glow-warm: rgba(226, 178, 58, 0.26);
+  --glow-signal: rgba(216, 65, 31, 0.12);
+  --glow-lift: rgba(38, 36, 24, 0.7);
+  --glow-foot: rgba(226, 178, 58, 0.14);
+}
+
+:root[data-palette="peacock"] {
+  --color-signal-deep: #a8371a;
+  --color-enamel: #0a5e66;
+  --color-enamel-deep: #033940;
+  --color-enamel-lit: #12808a;
+  --color-board: #f3ecd9;
+  --color-board-dim: #d4c8ab;
+  --color-signal: #ef5b36;
+  --color-gold: #f6c53e;
+  --color-ink: #06120f;
+  --color-faded: #86bcbe;
+  --glow-warm: rgba(246, 197, 62, 0.27);
+  --glow-signal: rgba(239, 91, 54, 0.15);
+  --glow-lift: rgba(18, 128, 138, 0.5);
+  --glow-foot: rgba(246, 197, 62, 0.15);
+}
+
+:root[data-palette="aubergine"] {
+  --color-signal-deep: #b03c18;
+  --color-enamel: #40194f;
+  --color-enamel-deep: #230a2d;
+  --color-enamel-lit: #5a2770;
+  --color-board: #f4e9da;
+  --color-board-dim: #d6c6ae;
+  --color-signal: #ff6a3d;
+  --color-gold: #f3c04a;
+  --color-ink: #10050f;
+  --color-faded: #b394c2;
+  --glow-warm: rgba(243, 192, 74, 0.26);
+  --glow-signal: rgba(255, 106, 61, 0.15);
+  --glow-lift: rgba(90, 39, 112, 0.6);
+  --glow-foot: rgba(243, 192, 74, 0.15);
+}
