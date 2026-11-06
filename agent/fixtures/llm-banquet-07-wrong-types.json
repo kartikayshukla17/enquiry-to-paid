@@ -1,0 +1,19 @@
+{
+  "id": "llm-banquet-07-wrong-types",
+  "comment": "FICTIONAL enquiry whose recorded output has guestCount as a string: rejected. customerRef is a made-up label, not a phone number.",
+  "tenant": {
+    "id": "tenant-rose-court",
+    "name": "FICTIONAL: Rose Court Banquets"
+  },
+  "rateCard": "rate-cards/fictional-banquet.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-106",
+  "availability": {
+    "blockedDates": []
+  },
+  "messages": [
+    {
+      "text": "Table for a big wedding party, twenty guests, 5 December 2026."
+    }
+  ]
+}

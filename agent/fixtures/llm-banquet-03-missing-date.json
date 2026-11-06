@@ -1,0 +1,19 @@
+{
+  "id": "llm-banquet-03-missing-date",
+  "comment": "FICTIONAL free-text enquiry with no date: one clarifying question. customerRef is a made-up label, not a phone number.",
+  "tenant": {
+    "id": "tenant-rose-court",
+    "name": "FICTIONAL: Rose Court Banquets"
+  },
+  "rateCard": "rate-cards/fictional-banquet.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-102",
+  "availability": {
+    "blockedDates": []
+  },
+  "messages": [
+    {
+      "text": "Need your banquet for a birthday party, around 80 guests, somewhere in Greater Noida West."
+    }
+  ]
+}

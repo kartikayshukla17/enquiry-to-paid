@@ -1,0 +1,18 @@
+{
+  "op": "wordReply",
+  "input": {
+    "kind": "quote",
+    "template": "Thank you for your enquiry! Here is your quote for {{guestCount}} guests on {{date}}: {{lines}} Total: {{total}} This quote is valid until {{validUntil}}."
+  },
+  "promptHash": "0fb60bdf8da32517ef9c2e8b54ef3c07be0010b74950d2f414693e9369147d59",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "text": "Lovely to hear from you! For {{guestCount}} guests on {{date}}, here is what it comes to:\n\n{{lines}}\n\nTotal: {{total}}\nThis quote is valid until {{validUntil}}."
+  }
+}

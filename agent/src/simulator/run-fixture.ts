@@ -8,6 +8,9 @@ import type { Availability, ExtractedFields, Outcome } from "../kernel/types.js"
 import type { LedgerRow } from "../ledger/index.js";
 import { createLogNotifier, type Notifier } from "../escalation/index.js";
 import { handleEnquiry } from "../pipeline/handle-enquiry.js";
+import { handleMessage } from "../pipeline/handle-message.js";
+import { createProvider } from "../llm/config.js";
+import type { LlmProvider } from "../llm/types.js";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const AGENT_ROOT = path.join(REPO_ROOT, "agent");
@@ -23,7 +26,8 @@ interface Fixture {
   conversation?: { from: string; text: string }[];
   extracted?: ExtractedFields;
   /** Multi-message form (T3): per-message fixture-extracted fields, merged over earlier ones by the thread. */
-  messages?: { text: string; extracted: Partial<ExtractedFields> }[];
+  /** `extracted` omitted: the text goes through the LlmProvider (replay by default, offline). */
+  messages?: { text: string; extracted?: Partial<ExtractedFields> }[];
 }
 
 export interface RunResult {
@@ -44,6 +48,10 @@ export interface RunOptions {
   overrideFields?: Partial<ExtractedFields>;
   /** Process only the message at this index (0-based); lets a test use a fresh connection per message. */
   only?: number;
+  /** Provider for messages without fixture-extracted fields; defaults to createProvider() from env (replay). */
+  llm?: LlmProvider;
+  /** Let the model reword quote/clarify replies (code injects and checks the numbers). Default: LLM_WORD_REPLIES=1. */
+  wordReplies?: boolean;
 }
 
 /** Resolves a fixture path against cwd, agent/, then the invoking directory. */
@@ -73,22 +81,26 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
   if (selected.length === 0) throw new Error(`fixture ${fx.id} has no message ${opts.only}`);
 
   const turns: RunResult["turns"] = [];
+  let llm = opts.llm;
   for (const m of selected) {
-    const fields = { ...m.extracted, ...opts.overrideFields };
-    const res = await handleEnquiry(
-      { pool: opts.pool, kernel, notifier: opts.notifier ?? createLogNotifier() },
-      {
-        tenant: fx.tenant,
-        threadId: `${fx.tenant.id}:thread:${fx.id}`,
-        customerRef: fx.customerRef,
-        rateCard,
-        rateCardVersion: (rateCard as { version: number }).version,
-        now: fx.now,
-        availability: fx.availability,
-        message: m.text,
-        fields,
-      },
-    );
+    const input = {
+      tenant: fx.tenant,
+      threadId: `${fx.tenant.id}:thread:${fx.id}`,
+      customerRef: fx.customerRef,
+      rateCard,
+      rateCardVersion: (rateCard as { version: number }).version,
+      now: fx.now,
+      availability: fx.availability,
+      message: m.text,
+    };
+    const notifier = opts.notifier ?? createLogNotifier();
+    let res;
+    if (m.extracted === undefined) {
+      llm ??= createProvider();
+      res = await handleMessage({ pool: opts.pool, kernel, notifier, llm, wordReplies: opts.wordReplies ?? process.env.LLM_WORD_REPLIES === "1" }, input);
+    } else {
+      res = await handleEnquiry({ pool: opts.pool, kernel, notifier }, { ...input, fields: { ...m.extracted, ...opts.overrideFields } });
+    }
     turns.push({ reply: res.reply, quote: res.outcome, fields: res.fields as RunResult["fields"], ledgerRow: res.ledgerRow });
   }
   const last = turns[turns.length - 1] as Omit<RunResult, "turns">;

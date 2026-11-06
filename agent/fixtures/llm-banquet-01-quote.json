@@ -1,0 +1,19 @@
+{
+  "id": "llm-banquet-01-quote",
+  "comment": "FICTIONAL free-text enquiry; extraction comes from a recording in src/llm/fixtures (replay). customerRef is a made-up label, not a phone number.",
+  "tenant": {
+    "id": "tenant-rose-court",
+    "name": "FICTIONAL: Rose Court Banquets"
+  },
+  "rateCard": "rate-cards/fictional-banquet.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-100",
+  "availability": {
+    "blockedDates": []
+  },
+  "messages": [
+    {
+      "text": "Hi, we are planning my cousin's engagement at your hall on 12 December 2026 for about 120 guests. Please send a quote."
+    }
+  ]
+}

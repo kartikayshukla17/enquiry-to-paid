@@ -3,12 +3,21 @@ import { DEFAULT_DATABASE_URL } from "../ledger/test-db.js";
 import { migrate } from "../ledger/migrate.js";
 import { randomBytes } from "node:crypto";
 import { runFixture } from "./run-fixture.js";
+import { runChat } from "./chat.js";
 import { runTwoTenants } from "./two-tenants.js";
+
+function flag(argv: string[], name: string): string | undefined {
+  const i = argv.indexOf(name);
+  return i >= 0 ? argv[i + 1] : undefined;
+}
 
 async function main(argv: string[]): Promise<number> {
   const [cmd, fixture] = argv;
-  if ((cmd !== "run" && cmd !== "two-tenants") || !fixture) {
-    console.error("usage: pnpm sim run <fixture.json> | pnpm sim two-tenants <fixture.json>");
+  if ((cmd !== "run" && cmd !== "two-tenants" && cmd !== "chat") || !fixture) {
+    console.error(
+      'usage: pnpm sim run <fixture.json> | pnpm sim two-tenants <fixture.json> | pnpm sim chat "<english text>" [--tenant <id>] [--card <rate-cards/x.json>] [--customer <ref>] [--words]\n' +
+        "  chat/run use LLM_PROVIDER=groq|fixture (default fixture) and LLM_MODE=record|replay|live (default replay, offline)",
+    );
     return 2;
   }
   // Demo convenience only: without configured keys, use process-local throwaway ones (nothing readable survives the run).
@@ -31,6 +40,25 @@ async function main(argv: string[]): Promise<number> {
       for (const c of rep.crossReads) console.log(`read ${c.table.padEnd(15)} -> ${c.rows} rows ${c.allowed ? "LEAK" : "(blocked)"}`);
       console.log(`insert with tenant 2's id -> ${rep.crossInsertRejected ? "rejected by row-level security" : "NOT REJECTED"}`);
       return rep.crossReads.every((c) => !c.allowed) && rep.crossInsertRejected ? 0 : 1;
+    }
+    if (cmd === "chat") {
+      const tenant = flag(argv, "--tenant");
+      const card = flag(argv, "--card");
+      const customer = flag(argv, "--customer");
+      const mode = process.env.LLM_MODE ?? "replay";
+      console.error(`note: LLM_PROVIDER=${process.env.LLM_PROVIDER ?? "fixture"} LLM_MODE=${mode}${mode === "replay" ? " (offline, recorded responses)" : ""}`);
+      const c = await runChat(fixture, {
+        pool,
+        ...(tenant && { tenantId: tenant }),
+        ...(card && { card }),
+        ...(customer && { customerRef: customer }),
+        ...(argv.includes("--words") && { wordReplies: true }),
+      });
+      console.log("--- WhatsApp reply (fictional) ---");
+      console.log(c.reply);
+      console.log("\n--- stored ledger row ---");
+      console.log(JSON.stringify(c.ledgerRow, null, 2));
+      return 0;
     }
     const r = await runFixture(fixture, { pool });
     r.turns.forEach((t, i) => {

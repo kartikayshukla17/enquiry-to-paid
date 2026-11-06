@@ -1,0 +1,19 @@
+{
+  "id": "llm-banquet-04-low-confidence",
+  "comment": "FICTIONAL vague enquiry; recorded confidence 4200 bps is below the 7000 gate: holding reply + escalation. customerRef is a made-up label, not a phone number.",
+  "tenant": {
+    "id": "tenant-rose-court",
+    "name": "FICTIONAL: Rose Court Banquets"
+  },
+  "rateCard": "rate-cards/fictional-banquet.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-103",
+  "availability": {
+    "blockedDates": []
+  },
+  "messages": [
+    {
+      "text": "maybe sometime around the end of this month or early next, something like 100 to 150 people?"
+    }
+  ]
+}

@@ -1,5 +1,19 @@
 # agent
 
+## LLM extraction (T6)
+
+- `LlmProvider` (`src/llm/types.ts`): `extract` and `wordReply`. Implementations: `groq/` (OpenAI-compatible chat completions, JSON mode, injectable `fetch`) and `fixture/` (recordings keyed by `sha256(op, normalised input, prompt hash)` in `src/llm/fixtures/`).
+- Config only: `LLM_PROVIDER=groq|fixture` (default `fixture`), `LLM_MODE=record|replay|live` (default `replay`; tests and CI never leave it), `GROQ_API_KEY` from env only, `GROQ_MODEL` (default `llama-3.3-70b-versatile`), `GROQ_REGION` (recorded as the processing region, default `us`), `LOW_CONFIDENCE_BPS` (default 7000), `LLM_WORD_REPLIES=1`.
+- A missing recording in replay mode fails loudly. `pnpm --filter agent exec tsx src/llm/seed-recordings.ts` regenerates the hand-written fictional recordings (labelled provider `fixture`, never as Groq output).
+- `pnpm sim chat "<english text>" [--tenant id] [--card rate-cards/x.json] [--customer ref] [--words]`; `pnpm sim run fixtures/llm-banquet-01-quote.json` (free-text fixtures replay offline).
+- Live (not exercised in this repo's tests): `GROQ_API_KEY=... LLM_PROVIDER=groq LLM_MODE=record pnpm sim chat "..."` calls Groq and writes the recording; rerun without the key for an offline replay.
+
+Ruling: extraction output is validated in TS (`src/extract/schema.ts`), rebuilt field by field; unknown keys, wrong types and free text are rejected.
+Ruling: confidence below the threshold (default 7000 bps) is a `low_confidence` refusal with the holding reply and an escalation; nothing from that read is merged into the thread (a confirm-back state machine is deferred).
+Ruling: provider failure or schema-invalid output is a `refusal` row (reason `low_confidence`, `ruleGap extraction_<code>`) plus escalation; the kernel is never consulted and no quote is possible. Missing recording or key are setup errors and throw.
+Ruling: the model never writes a number: wording uses `{{placeholders}}`, code injects the values, and any digit run or number word not in the plain reply forces the plain reply.
+Ruling: cost is per call: the extraction row carries the extraction cost, the outcome row the wording cost (0 if none); the enquiry row records which provider/region saw the text (cost 0). Raw text lives only in the enquiry ledger row, never in logs.
+
 ## Ledger tamper-evidence demo (T4)
 
 Needs the local Postgres (`postgres://postgres:postgres@localhost:54329/e2p`) and `pnpm build:kernel` once.
