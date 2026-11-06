@@ -75,7 +75,14 @@ pub struct Tier {
 pub enum Charge {
     Flat { amount: i64 },
     #[serde(rename_all = "camelCase")]
-    PerUnit { field: String, unit_amount: i64 },
+    /// `unit_amount * max(0, value - included)`. `included` (default 0) is a quantity already covered by
+    /// another charge, so only units beyond it are billed (e.g. extra hours past those a package includes).
+    PerUnit {
+        field: String,
+        unit_amount: i64,
+        #[serde(default)]
+        included: i64,
+    },
     Tiered { field: String, tiers: Vec<Tier> },
 }
 

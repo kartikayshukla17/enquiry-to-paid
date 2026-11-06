@@ -129,9 +129,10 @@ fn int_field(f: &Fields, name: &str) -> Result<i64, KernelError> {
 fn charge(c: &Charge, f: &Fields) -> Result<i64, KernelError> {
     match c {
         Charge::Flat { amount } => Ok(*amount),
-        Charge::PerUnit { field, unit_amount } => unit_amount
-            .checked_mul(int_field(f, field)?)
-            .ok_or(KernelError::Overflow),
+        Charge::PerUnit { field, unit_amount, included } => {
+            let billable = int_field(f, field)?.saturating_sub(*included).max(0);
+            unit_amount.checked_mul(billable).ok_or(KernelError::Overflow)
+        }
         Charge::Tiered { field, tiers } => {
             let v = int_field(f, field)?;
             tiers
