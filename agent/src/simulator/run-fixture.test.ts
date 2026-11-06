@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestDb, type TestDb } from "../ledger/test-db.js";
 import type { Quote } from "../kernel/types.js";
+import { REFUSAL_REASONS } from "../kernel/types.js";
+import { collectingNotifier, createLogNotifier, describeReason, type EscalationEvent } from "../escalation/index.js";
+import { holdingReply } from "../pipeline/reply.js";
 import { runFixture } from "./run-fixture.js";
 
 const FIXTURE = "fixtures/banquet-01.json";
@@ -105,6 +108,64 @@ describe("runFixture (the seam behind `pnpm sim run`)", () => {
     expect(r.quote.kind).toBe("refusal");
     expect(r.reply).not.toMatch(/\d/);
     expect(r.ledgerRow.type).toBe("refusal");
+  });
+});
+
+describe("refusal path (300 guests in a month the card does not cover)", () => {
+  const REFUSAL_FIXTURE = "fixtures/wedding-300-out-of-season.json";
+
+  it("returns a typed refusal with the rule gap, a price-free holding reply and a refusal ledger row", async () => {
+    const events: EscalationEvent[] = [];
+    const r = await runFixture(REFUSAL_FIXTURE, { pool: db.pool, notifier: collectingNotifier(events) });
+
+    expect(r.quote).toEqual({ kind: "refusal", reason: "no_covering_rule", ruleGap: "date,guestCount" });
+    expect(r.reply).not.toMatch(/\d/);
+    expect(r.reply).not.toMatch(/₹|rs\.?\s/i);
+    expect(r.ledgerRow.type).toBe("refusal");
+    expect(r.ledgerRow.payload).toEqual(r.quote);
+
+    const { rows } = await db.pool.query("SELECT state FROM threads WHERE id = $1", [r.ledgerRow.threadId]);
+    expect(rows[0].state).toBe("refused");
+  });
+
+  it("emits exactly one escalation event with reason, ruleGap and typed fields, and no raw phone", async () => {
+    const events: EscalationEvent[] = [];
+    const r = await runFixture(REFUSAL_FIXTURE, { pool: db.pool, notifier: collectingNotifier(events) });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      tenantId: "tenant-marigold-hall",
+      threadId: r.ledgerRow.threadId,
+      reason: "no_covering_rule",
+      ruleGap: "date,guestCount",
+      fields: { service: "banquet", date: "2027-06-13", guestCount: 300 },
+    });
+    expect(JSON.stringify(events)).not.toMatch(/\+\d{10,}|\b[6-9]\d{9}\b/);
+  });
+
+  it("the stub notifier logs one line with reason, ruleGap and fields", async () => {
+    const lines: string[] = [];
+    await runFixture(REFUSAL_FIXTURE, { pool: db.pool, notifier: createLogNotifier((l) => lines.push(l)) });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("reason=no_covering_rule");
+    expect(lines[0]).toContain("ruleGap=date,guestCount");
+    expect(lines[0]).toContain('"guestCount":300');
+    expect(lines[0]).not.toMatch(/\+\d{10,}|\b[6-9]\d{9}\b/);
+  });
+
+  it("does not escalate when a quote is issued", async () => {
+    const events: EscalationEvent[] = [];
+    await runFixture(FIXTURE, { pool: db.pool, notifier: collectingNotifier(events) });
+    expect(events).toEqual([]);
+  });
+
+  it("every refusal reason has a price-free holding reply and an escalation summary", () => {
+    for (const reason of REFUSAL_REASONS) {
+      const text = holdingReply(reason);
+      expect(text).not.toMatch(/\d/);
+      expect(text.length).toBeGreaterThan(20);
+      expect(describeReason(reason).length).toBeGreaterThan(5);
+    }
   });
 });
 

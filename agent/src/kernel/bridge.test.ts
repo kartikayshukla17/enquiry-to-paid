@@ -32,6 +32,7 @@ describe("KernelBridge (public seam: evaluate JSON in / JSON out)", () => {
     expect(kernel.evaluate(input({ ...saturday, guestCount: 900 }))).toEqual({
       kind: "refusal",
       reason: "no_covering_rule",
+      ruleGap: "guestCount",
     });
   });
 

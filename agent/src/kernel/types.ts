@@ -14,7 +14,23 @@ export interface Quote {
   lines: QuoteLine[];
 }
 
-export type RefusalReason = "no_covering_rule" | "missing_required_field" | "date_unavailable";
+/** Mirrors `RefusalReason::code()` in kernel/src/eval.rs. Closed set. */
+export const REFUSAL_REASONS = [
+  "no_covering_rule",
+  "missing_required_field",
+  "date_unavailable",
+  "discount_request",
+  "low_confidence",
+  "out_of_policy",
+  "calendar_mismatch",
+] as const;
+
+export type RefusalReason = (typeof REFUSAL_REASONS)[number];
+
+/** Compile-time exhaustiveness: pass the leftover value of a switch's default branch. */
+export function assertNever(x: never): never {
+  throw new Error(`unhandled case: ${JSON.stringify(x)}`);
+}
 
 export interface Refusal {
   kind: "refusal";

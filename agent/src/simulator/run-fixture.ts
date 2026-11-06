@@ -6,6 +6,7 @@ import type { Pool } from "pg";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import type { Availability, ExtractedFields, Outcome } from "../kernel/types.js";
 import type { LedgerRow } from "../ledger/index.js";
+import { createLogNotifier, type Notifier } from "../escalation/index.js";
 import { handleEnquiry } from "../pipeline/handle-enquiry.js";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
@@ -32,6 +33,8 @@ export interface RunResult {
 export interface RunOptions {
   pool: Pool;
   kernel?: KernelBridge;
+  /** Escalation sink; defaults to the logging stub. */
+  notifier?: Notifier;
   /** Test hook: replace some extracted fields (still typed). */
   overrideFields?: Partial<ExtractedFields>;
 }
@@ -55,7 +58,7 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
   const message = fx.conversation.filter((m) => m.from === "customer").map((m) => m.text).join("\n");
 
   const res = await handleEnquiry(
-    { pool: opts.pool, kernel },
+    { pool: opts.pool, kernel, notifier: opts.notifier ?? createLogNotifier() },
     {
       tenant: fx.tenant,
       threadId: `${fx.tenant.id}:thread:${fx.id}`,

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Pool } from "pg";
 import type { KernelBridge } from "../kernel/index.js";
 import { KernelError, type Availability, type ExtractedFields, type Outcome } from "../kernel/types.js";
+import type { Notifier } from "../escalation/index.js";
 import { appendEntry, type LedgerRow } from "../ledger/index.js";
 import { renderReply } from "./reply.js";
 
@@ -30,7 +31,7 @@ export const phoneHash = (ref: string) => createHash("sha256").update(`customer:
  * Free text (`message`) is stored in the ledger only; it never reaches the kernel.
  */
 export async function handleEnquiry(
-  deps: { pool: Pool; kernel: KernelBridge },
+  deps: { pool: Pool; kernel: KernelBridge; notifier: Notifier },
   e: EnquiryInput,
 ): Promise<EnquiryResult> {
   const raw = deps.kernel.evaluate({
@@ -74,6 +75,17 @@ export async function handleEnquiry(
     });
     await client.query("UPDATE threads SET state = $2 WHERE id = $1", [e.threadId, outcome.kind === "quote" ? "quoted" : "refused"]);
     await client.query("COMMIT");
+    // After commit: the refusal is durable before anyone is told about it.
+    if (outcome.kind === "refusal") {
+      await deps.notifier.notify({
+        tenantId: e.tenant.id,
+        threadId: e.threadId,
+        at: e.now,
+        reason: outcome.reason,
+        ...(outcome.ruleGap !== undefined && { ruleGap: outcome.ruleGap }),
+        fields: e.fields,
+      });
+    }
     return { reply, outcome, ledgerRow };
   } catch (err) {
     await client.query("ROLLBACK");

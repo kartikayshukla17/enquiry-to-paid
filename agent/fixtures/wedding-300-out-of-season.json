@@ -1,0 +1,22 @@
+{
+  "id": "wedding-300-out-of-season",
+  "comment": "FICTIONAL conversation and extracted fields. 300 guests in June is outside the seasonal card (Oct-Mar, max 250 guests). customerRef is a made-up label, not a phone number.",
+  "tenant": { "id": "tenant-marigold-hall", "name": "FICTIONAL: Marigold Hall" },
+  "rateCard": "rate-cards/fictional-banquet-seasonal.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-002",
+  "availability": { "blockedDates": [] },
+  "conversation": [
+    {
+      "from": "customer",
+      "text": "Hello, planning a wedding on 13 June 2027 for about 300 guests. What would the hall cost?"
+    }
+  ],
+  "extracted": {
+    "service": "banquet",
+    "date": "2027-06-13",
+    "guestCount": 300,
+    "language": "en",
+    "confidenceBps": 9100
+  }
+}

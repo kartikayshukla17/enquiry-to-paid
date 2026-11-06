@@ -1,4 +1,4 @@
-import type { ExtractedFields, Outcome, Quote } from "../kernel/types.js";
+import { assertNever, type ExtractedFields, type Outcome, type Quote, type RefusalReason } from "../kernel/types.js";
 
 const SYMBOLS: Record<string, string> = { INR: "₹" };
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -49,6 +49,25 @@ function renderQuote(q: Quote, f: ExtractedFields): string {
  */
 export function renderReply(outcome: Outcome, fields: ExtractedFields): string {
   if (outcome.kind === "quote") return renderQuote(outcome, fields);
-  // Safe holding reply (T2 completes the refusal path): no numbers, no promises.
-  return "Thank you for your enquiry! A member of our team will review the details and get back to you shortly.";
+  return holdingReply(outcome.reason);
+}
+
+/**
+ * Safe holding reply for a refusal: no prices, no numbers, no promises, and it never reveals
+ * the card's internals. Static text, so no digit can appear.
+ */
+export function holdingReply(reason: RefusalReason): string {
+  switch (reason) {
+    case "no_covering_rule":
+    case "discount_request":
+    case "out_of_policy":
+    case "low_confidence":
+    case "missing_required_field":
+    case "calendar_mismatch":
+      return "Thank you for your enquiry! This one needs a personal look from our team, so I have passed it to them. They will get back to you shortly with the details.";
+    case "date_unavailable":
+      return "Thank you for your enquiry! I am not able to confirm that date right now, so I have passed it to our team. They will get back to you shortly with options.";
+    default:
+      return assertNever(reason);
+  }
 }
