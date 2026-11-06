@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import type { Pool } from "pg";
 import { createLogNotifier, type Notifier } from "../escalation/index.js";
 import { loadKernel } from "../kernel/index.js";
@@ -7,7 +5,8 @@ import type { LedgerRow } from "../ledger/index.js";
 import { createProvider } from "../llm/config.js";
 import type { LlmProvider } from "../llm/types.js";
 import { handleMessage } from "../pipeline/handle-message.js";
-import { REPO_ROOT } from "./run-fixture.js";
+import { seedApprovedCard } from "../ratecard/legacy.js";
+import { loadCardSource } from "../ratecard/source.js";
 
 export interface ChatOptions {
   pool: Pool;
@@ -27,11 +26,15 @@ export async function runChat(text: string, opts: ChatOptions): Promise<{ reply:
   const tenantId = opts.tenantId ?? "tenant-rose-court";
   const customerRef = opts.customerRef ?? "sim-chat-customer";
   const card = opts.card ?? "rate-cards/fictional-banquet.json";
-  const rateCard: unknown = JSON.parse(await readFile(path.join(REPO_ROOT, card), "utf8"));
+  const kernel = await loadKernel();
+  const rateCard = await loadCardSource(card, kernel);
+  const now = opts.now ?? "2026-11-07T10:00:00Z";
+  // Demo setup: the card goes through the real approval gate (read-backs answered yes by a seeded owner) first.
+  await seedApprovedCard({ pool: opts.pool, kernel }, { tenant: { id: tenantId, name: `FICTIONAL: ${tenantId}` }, card: rateCard, now });
   const res = await handleMessage(
     {
       pool: opts.pool,
-      kernel: await loadKernel(),
+      kernel,
       notifier: opts.notifier ?? createLogNotifier(),
       llm: opts.llm ?? createProvider(),
       wordReplies: opts.wordReplies ?? process.env.LLM_WORD_REPLIES === "1",
@@ -41,8 +44,7 @@ export async function runChat(text: string, opts: ChatOptions): Promise<{ reply:
       threadId: `${tenantId}:thread:chat:${customerRef}`,
       customerRef,
       rateCard,
-      rateCardVersion: (rateCard as { version: number }).version,
-      now: opts.now ?? "2026-11-07T10:00:00Z",
+      now,
       availability: { blockedDates: [] },
       message: text,
     },

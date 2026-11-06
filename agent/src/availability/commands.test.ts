@@ -1,3 +1,4 @@
+import { seedApprovedCard } from "../ratecard/legacy.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { collectingNotifier } from "../escalation/index.js";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
@@ -46,6 +47,7 @@ describe("owner commands end to end", () => {
     db = await createTestDb();
     const pii = piiKeysFromEnv();
     await db.pool.query("INSERT INTO tenants (id, name) VALUES ($1,$2)", [tenant.id, tenant.name]);
+    await seedApprovedCard({ pool: db.pool, kernel }, { tenant, card, now: NOW });
     for (const [ref, role] of [[OWNER, "owner"], [MANAGER, "manager"], [STAFF, "staff"]] as const) {
       await db.pool.query("INSERT INTO members (id, tenant_id, role, phone_hash, phone_enc) VALUES ($1,$2,$3,$4,$5)", [`m-${role}`, tenant.id, role, phoneHash(pii, ref), encryptPii(pii, ref)]);
     }
@@ -59,7 +61,7 @@ describe("owner commands end to end", () => {
     handleEnquiry(
       { pool: db.pool, kernel, notifier: collectingNotifier([]), availability: nativeAvailability },
       {
-        tenant, threadId: `${tenant.id}:th:${customer}`, customerRef: customer, rateCard: card, rateCardVersion: card.version, now,
+        tenant, threadId: `${tenant.id}:th:${customer}`, customerRef: customer, rateCard: card, now,
         availability: { blockedDates: [] }, message: "m",
         fields: { service: "banquet", date, guestCount: 120, language: "en", confidenceBps: 9000 },
       },

@@ -13,6 +13,9 @@ import { createProvider } from "../llm/config.js";
 import type { LlmProvider } from "../llm/types.js";
 import { nativeAvailability } from "../availability/native.js";
 import { runDueTimers } from "../timers/run.js";
+import { seedApprovedCard } from "../ratecard/legacy.js";
+import { loadCardSource } from "../ratecard/source.js";
+import { publishDraft } from "../ratecard/store.js";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const AGENT_ROOT = path.join(REPO_ROOT, "agent");
@@ -20,7 +23,12 @@ const AGENT_ROOT = path.join(REPO_ROOT, "agent");
 interface Fixture {
   id: string;
   tenant: { id: string; name: string };
-  rateCard: string; // path relative to repo root
+  rateCard: string; // path relative to repo root: a `.json` card or a CSV template directory
+  /**
+   * `approved` (default): the card goes through the real approval gate (read-backs, all yes, by a seeded owner) before
+   * the first message. `unapproved`: it is only stored as a draft revision, so it must not quote.
+   */
+  cardApproval?: "approved" | "unapproved";
   now: string;
   customerRef: string;
   availability: Availability;
@@ -81,8 +89,11 @@ export function resolveFixture(p: string): string {
 /** The seam behind `pnpm sim run <fixture>`. */
 export async function runFixture(fixturePath: string, opts: RunOptions): Promise<RunResult> {
   const fx = JSON.parse(await readFile(resolveFixture(fixturePath), "utf8")) as Fixture;
-  const rateCard: unknown = JSON.parse(await readFile(path.join(REPO_ROOT, fx.rateCard), "utf8"));
   const kernel = opts.kernel ?? (await loadKernel());
+  const rateCard = await loadCardSource(fx.rateCard, kernel);
+  const gateDeps = { pool: opts.pool, kernel };
+  if (fx.cardApproval === "unapproved") await publishDraft(gateDeps, { tenant: fx.tenant, card: rateCard as Record<string, unknown>, source: fx.rateCard });
+  else await seedApprovedCard(gateDeps, { tenant: fx.tenant, card: rateCard, now: fx.now, source: fx.rateCard });
   const messages =
     fx.messages ??
     [
@@ -110,7 +121,6 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
       threadId: m.customerRef ? `${fx.tenant.id}:thread:${fx.id}:${m.customerRef}` : `${fx.tenant.id}:thread:${fx.id}`,
       customerRef,
       rateCard,
-      rateCardVersion: (rateCard as { version: number }).version,
       now: m.now ?? fx.now,
       availability: fx.availability,
       message: m.text,

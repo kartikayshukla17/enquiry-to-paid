@@ -10,6 +10,7 @@ import type { LlmProvider } from "../llm/types.js";
 import { EXTRACT_PROMPT_HASH, SCHEMA_VERSION } from "../llm/prompts.js";
 import { handleMessage } from "../pipeline/handle-message.js";
 import { DEFAULT_LOW_CONFIDENCE_BPS } from "../pipeline/handle-enquiry.js";
+import { seedApprovedCard } from "../ratecard/legacy.js";
 import {
   DEFAULT_RECORDINGS_DIR,
   DEFAULT_SETS_DIR,
@@ -206,7 +207,12 @@ export async function runEval(opts: EvalOptions): Promise<EvalReport> {
   const recordingsDir = opts.recordingsDir ?? DEFAULT_RECORDINGS_DIR;
   const { cases, setHashes } = await loadSets(opts.setsDir ?? DEFAULT_SETS_DIR);
   const rateCards = new Map<string, unknown>();
-  for (const id of new Set(cases.map(cardOf))) rateCards.set(id, await loadRateCard(id));
+  for (const id of new Set(cases.map(cardOf))) {
+    const card = await loadRateCard(id);
+    rateCards.set(id, card);
+    // Setup only: each card goes through the real approval gate first; the pipeline never prices from an unapproved card.
+    await seedApprovedCard({ pool: opts.pool, kernel }, { tenant: TENANT, card, now: EVAL_NOW });
+  }
   const llm = opts.llm ?? createReplayProvider(recordingsDir);
   const events: EscalationEvent[] = [];
   const notifier = collectingNotifier(events);
@@ -236,7 +242,6 @@ export async function runEval(opts: EvalOptions): Promise<EvalReport> {
         threadId: `${TENANT.id}:thread:${c.id}`,
         customerRef: `eval-${c.id}`,
         rateCard,
-        rateCardVersion: (rateCard as { version: number }).version,
         now: EVAL_NOW,
         availability: { blockedDates: c.blockedDates ?? [] },
         message: c.text,

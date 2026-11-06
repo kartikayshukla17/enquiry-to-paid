@@ -1,12 +1,13 @@
 import { readFile } from "node:fs/promises";
-import path from "node:path";
 import type { Pool } from "pg";
 import { createLogNotifier } from "../escalation/index.js";
 import { loadKernel } from "../kernel/index.js";
 import type { Availability, ExtractedFields, TurnOutcome } from "../kernel/types.js";
 import { handleEnquiry } from "../pipeline/handle-enquiry.js";
 import { withTenant } from "../tenancy/with-tenant.js";
-import { REPO_ROOT, resolveFixture } from "./run-fixture.js";
+import { seedApprovedCard } from "../ratecard/legacy.js";
+import { loadCardSource } from "../ratecard/source.js";
+import { resolveFixture } from "./run-fixture.js";
 
 interface TwoTenantFixture {
   now: string;
@@ -33,7 +34,8 @@ export async function runTwoTenants(fixturePath: string, opts: { pool: Pool }): 
   const kernel = await loadKernel();
   const tenants: TwoTenantReport["tenants"] = [];
   for (const t of fx.tenants) {
-    const rateCard: unknown = JSON.parse(await readFile(path.join(REPO_ROOT, t.rateCard), "utf8"));
+    const rateCard = await loadCardSource(t.rateCard, kernel);
+    await seedApprovedCard({ pool: opts.pool, kernel }, { tenant: t.tenant, card: rateCard, now: fx.now });
     const res = await handleEnquiry(
       { pool: opts.pool, kernel, notifier: createLogNotifier() },
       {
@@ -41,7 +43,6 @@ export async function runTwoTenants(fixturePath: string, opts: { pool: Pool }): 
         threadId: `${t.tenant.id}:thread:two-tenants`,
         customerRef: fx.customerRef,
         rateCard,
-        rateCardVersion: (rateCard as { version: number }).version,
         now: fx.now,
         availability: fx.availability,
         message: fx.message,

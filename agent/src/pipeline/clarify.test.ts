@@ -8,6 +8,7 @@ import type { Quote } from "../kernel/types.js";
 import { collectingNotifier, type EscalationEvent } from "../escalation/index.js";
 import { handleEnquiry } from "./handle-enquiry.js";
 import { runFixture } from "../simulator/run-fixture.js";
+import { seedApprovedCard } from "../ratecard/legacy.js";
 
 let db: TestDb;
 beforeAll(async () => {
@@ -77,6 +78,7 @@ describe("missing information: ask, then quote", () => {
     const card = JSON.parse(await readFile(CARD_PATH, "utf8")) as { requiredFields: { field: string; question: string }[] };
     const required = card.requiredFields.map((f) => f.field);
     const questions = new Map(card.requiredFields.map((f) => [f.field, f.question]));
+    await seedApprovedCard({ pool: db.pool, kernel }, { tenant: TENANT, card, now: "2026-11-07T10:00:00Z" });
     const all: Record<string, unknown> = { service: "banquet", date: "2026-12-12", guestCount: 120 };
     // Every subset of required fields present, plus an extra field the card does not require.
     for (let mask = 0; mask < 7; mask++) {
@@ -91,7 +93,6 @@ describe("missing information: ask, then quote", () => {
           threadId: `t-subset-${mask}`,
           customerRef: `c-${mask}`,
           rateCard: card,
-          rateCardVersion: 1,
           now: "2026-11-07T10:00:00Z",
           availability: { blockedDates: [] },
           message: "x",
@@ -109,6 +110,7 @@ describe("missing information: ask, then quote", () => {
     const kernel = await loadKernel();
     const card = JSON.parse(await readFile(CARD_PATH, "utf8")) as { requiredFields: { field: string }[] };
     const relaxed = { ...card, requiredFields: card.requiredFields.filter((f) => f.field !== "date") };
+    await seedApprovedCard({ pool: db.pool, kernel }, { tenant: TENANT, card: relaxed, now: "2026-11-07T10:00:00Z" });
     const res = await handleEnquiry(
       { pool: db.pool, kernel, notifier: collectingNotifier([]) },
       {
@@ -116,7 +118,6 @@ describe("missing information: ask, then quote", () => {
         threadId: "t-relaxed",
         customerRef: "c-relaxed",
         rateCard: relaxed,
-        rateCardVersion: 2,
         now: "2026-11-07T10:00:00Z",
         availability: { blockedDates: [] },
         message: "x",

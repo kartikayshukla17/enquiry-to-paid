@@ -1,3 +1,4 @@
+import { seedApprovedCard } from "../ratecard/legacy.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -47,6 +48,7 @@ describe("no quote is ever issued for an unavailable date (random operation sequ
     const pii = piiKeysFromEnv();
     await db.pool.query("INSERT INTO tenants (id, name) VALUES ($1,$2)", [tenant.id, tenant.name]);
     await db.pool.query("INSERT INTO members (id, tenant_id, role, phone_hash, phone_enc) VALUES ($1,$2,'owner',$3,$4)", [`m-${seed}`, tenant.id, phoneHash(pii, "owner"), encryptPii(pii, "owner")]);
+    await seedApprovedCard({ pool: db.pool, kernel }, { tenant, card, now: "2026-11-07T10:00:00Z" });
 
     // The model: what SHOULD be available, kept independently of the database.
     const blocks = new Set<string>();
@@ -64,7 +66,7 @@ describe("no quote is ever issued for an unavailable date (random operation sequ
         const r = await handleEnquiry(
           { pool: db.pool, kernel, notifier: collectingNotifier([]), availability: nativeAvailability },
           {
-            tenant, threadId: `${tenant.id}:th:${customer}`, customerRef: customer, rateCard: card, rateCardVersion: card.version,
+            tenant, threadId: `${tenant.id}:th:${customer}`, customerRef: customer, rateCard: card,
             now: iso(clock), availability: { blockedDates: [] }, message: "m",
             fields: { service: "banquet", date, guestCount: 120, language: "en", confidenceBps: 9000 },
           },

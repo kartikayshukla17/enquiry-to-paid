@@ -1,3 +1,4 @@
+import { seedApprovedCard } from "../ratecard/legacy.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -36,6 +37,7 @@ async function session() {
     },
   };
   const rateCard = JSON.parse(await readFile(CARD_PATH, "utf8")) as { version: number };
+  await seedApprovedCard({ pool: db.pool, kernel }, { tenant: TENANT, card: rateCard, now: "2026-11-07T10:00:00Z" });
   const threadId = `t-intent-${++n}`;
   const customerRef = `c-intent-${n}`;
   async function say(text: string, extracted: Record<string, unknown>) {
@@ -50,7 +52,6 @@ async function session() {
         threadId,
         customerRef,
         rateCard,
-        rateCardVersion: rateCard.version,
         now: "2026-11-07T10:00:00Z",
         availability: { blockedDates: [] },
         message: text,

@@ -1,3 +1,4 @@
+import { seedApprovedCard } from "../ratecard/legacy.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -44,6 +45,7 @@ async function enquire(
   opts: { card?: Card; guests?: number; fields?: Record<string, unknown> } = {},
 ) {
   const card = opts.card ?? banquet;
+  await seedApprovedCard({ pool: db.pool, kernel }, { tenant, card, now: T0 });
   return handleEnquiry(
     { pool: db.pool, kernel, notifier: collectingNotifier([]), availability: nativeAvailability },
     {
@@ -51,7 +53,6 @@ async function enquire(
       threadId: `${tenant.id}:thread:${customer}`,
       customerRef: customer,
       rateCard: card,
-      rateCardVersion: card.version,
       now,
       availability: { blockedDates: [] },
       message: "(fixture)",
@@ -88,10 +89,11 @@ describe("taken dates", () => {
 
   it("static blocked dates passed by the caller still refuse", async () => {
     const t = freshTenant();
+    await seedApprovedCard({ pool: db.pool, kernel }, { tenant: t, card: banquet, now: T0 });
     const r = await handleEnquiry(
       { pool: db.pool, kernel, notifier: collectingNotifier([]), availability: nativeAvailability },
       {
-        tenant: t, threadId: `${t.id}:th`, customerRef: "x", rateCard: banquet, rateCardVersion: 1, now: T0,
+        tenant: t, threadId: `${t.id}:th`, customerRef: "x", rateCard: banquet, now: T0,
         availability: { blockedDates: ["2026-12-12"] }, message: "m",
         fields: { service: "banquet", date: "2026-12-12", guestCount: 120, language: "en", confidenceBps: 9000 },
       },

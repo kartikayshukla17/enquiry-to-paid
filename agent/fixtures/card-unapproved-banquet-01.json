@@ -1,0 +1,23 @@
+{
+  "id": "card-unapproved-banquet-01",
+  "comment": "FICTIONAL. The template compiled and stored as a draft but never approved: the agent must not quote. Expect a typed out_of_policy refusal (ruleGap card_not_approved), the safe holding reply and an owner escalation.",
+  "tenant": { "id": "tenant-rose-court-draft", "name": "FICTIONAL: Rose Court Banquets (draft card)" },
+  "rateCard": "rate-cards/templates/fictional-banquet-template",
+  "cardApproval": "unapproved",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-001",
+  "availability": { "blockedDates": [] },
+  "conversation": [
+    {
+      "from": "customer",
+      "text": "Hi, we are looking at your hall for my sister's engagement on 12 December 2026, around 120 guests. Could you share a quote?"
+    }
+  ],
+  "extracted": {
+    "service": "banquet",
+    "date": "2026-12-12",
+    "guestCount": 120,
+    "language": "en",
+    "confidenceBps": 9200
+  }
+}

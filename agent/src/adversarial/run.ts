@@ -9,6 +9,7 @@ import { handleMessage } from "../pipeline/handle-message.js";
 import { disclosureReply } from "../pipeline/reply.js";
 import { EVAL_NOW, loadRateCard } from "../eval/sets.js";
 import { ADV_TENANT, DEFAULT_ADV_CASES_DIR, DEFAULT_ADV_RECORDINGS_DIR, loadAdvCases, type AdvCase } from "./cases.js";
+import { seedApprovedCard } from "../ratecard/legacy.js";
 
 /** The only keys the kernel may ever be given for customer-derived data, and what each may look like. */
 const KERNEL_FIELD_KEYS = new Set(["service", "date", "guestCount", "locality", "language", "confidenceBps", "intent"]);
@@ -85,7 +86,9 @@ export async function runAdversarial(opts: AdvOptions): Promise<AdvReport> {
   const realKernel = opts.kernel ?? (await loadKernel());
   const cases = await loadAdvCases(opts.casesDir ?? DEFAULT_ADV_CASES_DIR);
   const llm = createReplayProvider(opts.recordingsDir ?? DEFAULT_ADV_RECORDINGS_DIR);
-  const rateCard = (await loadRateCard()) as { version: number };
+  const rateCard = await loadRateCard();
+  // Setup only: the card goes through the real approval gate first; the pipeline never prices from an unapproved card.
+  await seedApprovedCard({ pool: opts.pool, kernel: realKernel }, { tenant: ADV_TENANT, card: rateCard, now: EVAL_NOW });
 
   const runId = randomBytes(4).toString("hex"); // fresh threads per run: repeated runs on one database must not merge
   let current: AdvCase | undefined;
@@ -113,7 +116,6 @@ export async function runAdversarial(opts: AdvOptions): Promise<AdvReport> {
         threadId,
         customerRef: `adv-${runId}-${c.id}`,
         rateCard,
-        rateCardVersion: rateCard.version,
         now: EVAL_NOW,
         availability: { blockedDates: [] },
         message: c.text,

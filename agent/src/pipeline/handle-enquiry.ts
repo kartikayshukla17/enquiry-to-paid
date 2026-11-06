@@ -3,6 +3,7 @@ import type { KernelBridge } from "../kernel/index.js";
 import { KernelError, NEGOTIATION_INTENTS, type Availability, type ExtractedFields, type Outcome, type TurnOutcome } from "../kernel/types.js";
 import type { Notifier } from "../escalation/index.js";
 import { appendEntry, type LedgerRow } from "../ledger/index.js";
+import { loadActiveCard } from "../ratecard/store.js";
 import type { ReplyWorder } from "../llm/word-reply.js";
 import { defaultResource } from "../availability/native.js";
 import type { AvailabilityProvider } from "../availability/types.js";
@@ -16,7 +17,6 @@ export interface EnquiryInput {
   threadId: string;
   customerRef: string; // stable reference; hashed before it touches the DB
   rateCard: unknown;
-  rateCardVersion: number;
   now: string;
   availability: Availability;
   message: string;
@@ -63,7 +63,6 @@ export async function handleEnquiry(
   deps: { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider },
   e: EnquiryInput,
 ): Promise<EnquiryResult> {
-  const cardHash = deps.kernel.rateCardHash(e.rateCard);
   const pii = deps.pii ?? piiKeysFromEnv();
   const threshold = deps.lowConfidenceBps ?? lowConfidenceThreshold();
   // Everything below runs as the unprivileged app role with app.tenant_id set (RLS applies).
@@ -86,12 +85,13 @@ export async function handleEnquiry(
     const failure = e.extractionFailure;
     const lowConf = !failure && typeof e.fields.confidenceBps === "number" && e.fields.confidenceBps < threshold;
     const gated = failure !== undefined || lowConf;
-    const cardId = (e.rateCard as { id: string }).id;
-    await client.query(
-      `INSERT INTO rate_cards (id, tenant_id, card_id, version, content_hash, compiled)
-       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING`,
-      [`${e.tenant.id}:${cardId}:${e.rateCardVersion}`, e.tenant.id, cardId, e.rateCardVersion, cardHash, JSON.stringify(e.rateCard)],
-    );
+    // Activation gate: the pipeline quotes only from the tenant's APPROVED snapshot of this card, re-hashed by the kernel.
+    // The card the caller passed names which card is meant (`id`); its content is never used to price.
+    const gate = await loadActiveCard(client, deps.kernel, e.tenant.id, (e.rateCard as { id: string }).id);
+    const card: unknown = gate.ok ? gate.card : e.rateCard;
+    const cardHash = gate.ok ? gate.hash : undefined;
+    // An honest "are you a bot?" answer prices nothing, so it needs no approved card.
+    const cardBlocked = !gate.ok && !isBotQuestion;
     const base = { tenantId: e.tenant.id, threadId: e.threadId, at: e.now };
     // Which provider/region saw the customer text is recorded on the enquiry row (cost sits on the call's own row).
     const seenBy = e.provenance ? { ...e.provenance, costMinor: 0 } : {};
@@ -116,6 +116,19 @@ export async function handleEnquiry(
           : { status: "low_confidence", thresholdBps: threshold, fields: e.fields },
         ...(e.provenance ?? FIXTURE_PROVENANCE),
       });
+    } else if (cardBlocked && !gate.ok) {
+      // No approved, intact card: the kernel is not consulted and no quote is possible. The owner is told via escalation.
+      // The typed fields are still remembered (they are only data), so the owner's escalation carries them.
+      const merged = { ...(stored?.fields ?? {}), ...messageFields } as Record<string, unknown>;
+      fields = typeof merged.language === "string" && typeof merged.confidenceBps === "number" ? (merged as unknown as ExtractedFields) : { language: "unknown", confidenceBps: 0 };
+      outcome = { kind: "refusal", reason: "out_of_policy", ruleGap: gate.gap };
+      reply = holdingReply("out_of_policy");
+      await appendEntry(client, deps.kernel, {
+        ...base,
+        type: "extraction",
+        payload: { status: "card_unavailable", gap: gate.gap },
+        ...(e.provenance ?? FIXTURE_PROVENANCE),
+      });
     } else {
       const merged = { ...(stored?.fields ?? {}), ...messageFields } as Record<string, unknown>;
       if (typeof merged.language !== "string" || typeof merged.confidenceBps !== "number") {
@@ -131,7 +144,7 @@ export async function handleEnquiry(
         const kernelFields = intent !== undefined && (NEGOTIATION_INTENTS as readonly unknown[]).includes(intent) ? { ...fields, intent } : fields;
         const evaluate = (blockedDates: string[], onDate?: string): Outcome => {
           const raw = deps.kernel.evaluate({
-            rateCard: e.rateCard,
+            rateCard: card,
             fields: onDate ? { ...kernelFields, date: onDate } : kernelFields,
             availability: { blockedDates },
             now: e.now,
@@ -152,7 +165,7 @@ export async function handleEnquiry(
         // the kernel is asked again with the date blocked and the quote is never issued.
         let holdUntil: string | undefined;
         if (outcome.kind === "quote" && provider && date && resourceId) {
-          const expiresAt = new Date(Date.parse(e.now) + holdHoursOf(e.rateCard) * 3_600_000).toISOString();
+          const expiresAt = new Date(Date.parse(e.now) + holdHoursOf(card) * 3_600_000).toISOString();
           const placed = await provider.placeHold(client, { tenantId: e.tenant.id, resourceId, threadId: e.threadId, start: date, end: date, expiresAt, now: e.now });
           if (!placed.ok) {
             outcome = evaluate([...blocked, date]);
@@ -163,15 +176,15 @@ export async function handleEnquiry(
           }
         }
         clarifying = outcome.kind === "refusal" && outcome.reason === "missing_required_field";
-        const ctx: ReplyContext = holdUntil !== undefined ? { holdUntil: formatInstantInZone(holdUntil, timezoneOf(e.rateCard)) } : {};
+        const ctx: ReplyContext = holdUntil !== undefined ? { holdUntil: formatInstantInZone(holdUntil, timezoneOf(card)) } : {};
         const priorExpired = (outcome.kind === "quote" || outcome.reason === "date_unavailable") && (await priorQuoteExpired(client, e.threadId, e.now));
         const prefix = priorExpired ? EXPIRED_QUOTE_PREFIX : "";
         if (outcome.kind === "refusal" && outcome.reason === "date_unavailable" && date) {
-          const alts = provider && resourceId && offersAlternatives(e.rateCard) ? await alternativeDates(client, provider, evaluate, { tenantId: e.tenant.id, resourceId, threadId: e.threadId, date, now: e.now, blocked }) : [];
+          const alts = provider && resourceId && offersAlternatives(card) ? await alternativeDates(client, provider, evaluate, { tenantId: e.tenant.id, resourceId, threadId: e.threadId, date, now: e.now, blocked }) : [];
           reply = prefix + unavailableReply(date, alts);
         } else {
-          reply = prefix + renderReply(outcome, fields, e.rateCard, ctx);
-          const t = deps.worder ? replyTemplate(outcome, fields, e.rateCard, ctx) : undefined;
+          reply = prefix + renderReply(outcome, fields, card, ctx);
+          const t = deps.worder ? replyTemplate(outcome, fields, card, ctx) : undefined;
           if (deps.worder && t) {
             const w = await deps.worder(t.kind, t.template, t.values);
             reply = prefix + w.reply;
@@ -193,7 +206,7 @@ export async function handleEnquiry(
       ...base,
       type: outcome.kind,
       payload: outcome,
-      rateCardHash: cardHash,
+      ...(cardHash !== undefined && { rateCardHash: cardHash }),
       ...outcomeProv,
     });
     for (const h of holdEvents) await appendEntry(client, deps.kernel, { ...base, threadId: h.threadId, type: "hold", payload: h.payload });

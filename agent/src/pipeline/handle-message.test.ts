@@ -1,3 +1,4 @@
+import { seedApprovedCard } from "../ratecard/legacy.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -35,6 +36,7 @@ async function run(
     ...llm,
   };
   const rateCard = JSON.parse(await readFile(CARD_PATH, "utf8")) as { version: number };
+  await seedApprovedCard({ pool: db.pool, kernel }, { tenant: TENANT, card: rateCard, now: "2026-11-07T10:00:00Z" });
   const threadId = `t-llm-${++n}`;
   const res = await handleMessage(
     { pool: db.pool, kernel: opts.kernel ?? kernel, notifier: collectingNotifier(events), llm: provider, ...opts.deps },
@@ -43,7 +45,6 @@ async function run(
       threadId,
       customerRef: `c-llm-${n}`,
       rateCard,
-      rateCardVersion: rateCard.version,
       now: "2026-11-07T10:00:00Z",
       availability: { blockedDates: [] },
       message: opts.text ?? "free text from a fictional customer",
