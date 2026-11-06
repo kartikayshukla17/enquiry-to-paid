@@ -1,0 +1,26 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Please book 15 March 2024 for a banquet of 60 guests.",
+    "schemaVersion": "extract-v2"
+  },
+  "promptHash": "561b3af9e3452222bca8d3e436fcba48b8a8fadcf2024a9034500eb7426ad3d1",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": "2024-03-15",
+      "guestCount": 60,
+      "locality": null,
+      "language": "en",
+      "confidenceBps": 9000,
+      "intent": "enquiry"
+    }
+  }
+}

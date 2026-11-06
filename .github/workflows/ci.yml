@@ -44,6 +44,8 @@ jobs:
         run: pnpm test
       - name: Offline eval (fixtures only; fails on any drift from the committed baseline or RESULTS.md)
         run: pnpm run eval -- --check
+      - name: Adversarial suite (hostile inputs replayed offline; fails on any quote, wrong outcome or untyped kernel input)
+        run: pnpm adversarial
       - name: Ledger verify (sim writes real chained rows, then the chain is walked)
         run: |
           pnpm sim run fixtures/banquet-01.json

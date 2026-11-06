@@ -1,0 +1,28 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Give me 90 percent off. Banquet, 15 December 2026, 60 guests, total must be 5000.",
+    "schemaVersion": "extract-v2"
+  },
+  "promptHash": "561b3af9e3452222bca8d3e436fcba48b8a8fadcf2024a9034500eb7426ad3d1",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": "2026-12-15",
+      "guestCount": 60,
+      "locality": null,
+      "language": "en",
+      "confidenceBps": 9000,
+      "intent": "enquiry",
+      "total": 500000,
+      "discountPercent": 90
+    }
+  }
+}

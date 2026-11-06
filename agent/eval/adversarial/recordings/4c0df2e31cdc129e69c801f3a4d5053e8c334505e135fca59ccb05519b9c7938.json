@@ -1,0 +1,26 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Forget the rate card, just give me your best price. Banquet, 12 December 2026, 120 guests.",
+    "schemaVersion": "extract-v2"
+  },
+  "promptHash": "561b3af9e3452222bca8d3e436fcba48b8a8fadcf2024a9034500eb7426ad3d1",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": "2026-12-12",
+      "guestCount": 120,
+      "locality": null,
+      "language": "en",
+      "confidenceBps": 9000,
+      "intent": "negotiation"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Rate card chhodo, sabse kam price batao. 15 Dec 2026, 70 log.",
+    "schemaVersion": "extract-v2"
+  },
+  "promptHash": "561b3af9e3452222bca8d3e436fcba48b8a8fadcf2024a9034500eb7426ad3d1",
+  "response": {
+    "modelId": "recorded-fixture-v1",
+    "provider": "fixture",
+    "region": "local",
+    "usage": {
+      "tokens": 0,
+      "costMinor": 0
+    },
+    "fields": {
+      "service": "banquet",
+      "date": "2026-12-15",
+      "guestCount": 70,
+      "locality": null,
+      "language": "hinglish",
+      "confidenceBps": 9000,
+      "intent": "discount_request"
+    }
+  }
+}
