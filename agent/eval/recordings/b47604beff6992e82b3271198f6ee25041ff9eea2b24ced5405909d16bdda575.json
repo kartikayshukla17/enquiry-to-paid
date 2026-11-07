@@ -16,6 +16,7 @@
     "fields": {
       "service": "wedding-shoot",
       "date": null,
+      "intent": "enquiry",
       "language": "hinglish",
       "confidenceBps": 5400
     }

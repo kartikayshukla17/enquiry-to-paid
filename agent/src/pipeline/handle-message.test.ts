@@ -22,7 +22,7 @@ afterAll(async () => {
 const CARD_PATH = fileURLToPath(new URL("../../../rate-cards/fictional-banquet.json", import.meta.url));
 const TENANT = { id: "tenant-rose-court", name: "FICTIONAL: Rose Court Banquets" };
 const META: CallMeta = { modelId: "test-model-1", provider: "testprov", region: "eu-test-1", usage: { tokens: 500, costMinor: 3 } };
-const GOOD = { service: "banquet", date: "2026-12-12", guestCount: 120, language: "en", confidenceBps: 9200 };
+const GOOD = { service: "banquet", date: "2026-12-12", guestCount: 120, language: "en", confidenceBps: 9200, intent: "enquiry" };
 
 let n = 0;
 async function run(

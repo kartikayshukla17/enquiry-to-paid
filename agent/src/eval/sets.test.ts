@@ -19,7 +19,7 @@ describe("labelled eval sets", () => {
   it("every gold field set is itself valid under the extraction schema", async () => {
     const { cases } = await loadSets();
     for (const c of cases) {
-      expect(validateExtraction({ ...c.gold, confidenceBps: 10000 }).ok, c.id).toBe(true);
+      expect(validateExtraction({ ...c.gold, confidenceBps: 10000, intent: "enquiry" }).ok, c.id).toBe(true);
     }
   });
 

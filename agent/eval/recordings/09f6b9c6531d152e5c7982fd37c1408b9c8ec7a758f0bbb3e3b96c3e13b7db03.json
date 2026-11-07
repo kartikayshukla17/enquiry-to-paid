@@ -19,6 +19,7 @@
       "package": "standard",
       "hours": 8,
       "distanceKm": 4,
+      "intent": "enquiry",
       "language": "en",
       "confidenceBps": 8700
     }

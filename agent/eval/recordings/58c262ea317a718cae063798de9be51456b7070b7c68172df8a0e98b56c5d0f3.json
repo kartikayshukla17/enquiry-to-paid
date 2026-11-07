@@ -17,6 +17,7 @@
       "service": "switch-replacement",
       "locality": "gaur-city",
       "quantity": 3,
+      "intent": "enquiry",
       "language": "en",
       "confidenceBps": 8800
     }

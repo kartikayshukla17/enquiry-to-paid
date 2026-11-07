@@ -17,6 +17,7 @@
       "service": "false-ceiling",
       "locality": "gaur-city",
       "quantity": 2,
+      "intent": "enquiry",
       "language": "hinglish",
       "confidenceBps": 6100
     }

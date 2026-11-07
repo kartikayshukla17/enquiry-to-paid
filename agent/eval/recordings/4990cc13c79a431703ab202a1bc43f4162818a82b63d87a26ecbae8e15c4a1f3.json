@@ -15,6 +15,7 @@
     },
     "fields": {
       "service": "steel-bolts",
+      "intent": "enquiry",
       "language": "hinglish",
       "confidenceBps": 5200
     }

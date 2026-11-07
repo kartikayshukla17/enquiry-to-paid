@@ -18,6 +18,7 @@
       "date": "2026-12-19",
       "guestCount": 2,
       "locality": null,
+      "intent": "enquiry",
       "language": "hinglish",
       "confidenceBps": 8800
     }

@@ -39,11 +39,10 @@ export function validateExtraction(raw: unknown): ValidationResult {
     return { ok: false, error: "confidenceBps must be an integer in 0..10000" };
   }
 
-  const out: ExtractedFields = { language, confidenceBps: conf };
-  if (has("intent")) {
-    if (typeof o.intent !== "string" || !(INTENTS as readonly string[]).includes(o.intent)) return { ok: false, error: "intent invalid" };
-    out.intent = o.intent as Intent;
-  }
+  // The intent is REQUIRED: a model output that omits it (or says null) is schema-invalid and takes the
+  // holding-reply path, so a hostile message can never be quoted just because the classification went missing.
+  if (typeof o.intent !== "string" || !(INTENTS as readonly string[]).includes(o.intent)) return { ok: false, error: "intent required" };
+  const out: ExtractedFields = { language, confidenceBps: conf, intent: o.intent as Intent };
   if (has("service")) {
     if (typeof o.service !== "string" || !SLUG.test(o.service)) return { ok: false, error: "service invalid" };
     out.service = o.service;

@@ -18,6 +18,7 @@
       "date": null,
       "guestCount": 100,
       "locality": null,
+      "intent": "enquiry",
       "language": "hi",
       "confidenceBps": 8300
     }

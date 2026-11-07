@@ -17,6 +17,7 @@
       "service": "banquet",
       "date": "2026-12-05",
       "guestCount": "twenty",
+      "intent": "enquiry",
       "language": "en",
       "confidenceBps": 9000
     }

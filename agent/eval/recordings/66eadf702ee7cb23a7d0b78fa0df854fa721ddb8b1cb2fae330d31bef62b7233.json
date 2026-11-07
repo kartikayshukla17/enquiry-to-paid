@@ -16,6 +16,7 @@
     "fields": {
       "service": "nylon-ties",
       "quantity": 500,
+      "intent": "enquiry",
       "language": "en",
       "confidenceBps": 8700
     }

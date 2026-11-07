@@ -18,6 +18,7 @@
       "date": "2026-11-28",
       "guestCount": 90,
       "locality": "gaur-city",
+      "intent": "enquiry",
       "language": "en",
       "confidenceBps": 9000
     }

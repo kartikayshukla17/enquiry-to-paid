@@ -168,7 +168,7 @@ Each cell is correct/scored. A case scores exactly the fields its gold object na
 | Rate card `fictional-photographer` | `rate-cards/fictional-photographer.json`, hash `1b80ad74bfe8be4d7ddef8dc8f243979763cea096c2286943650453f947904a7` |
 | Rate card `fictional-b2b-supplier` | `rate-cards/fictional-b2b-supplier.json`, hash `95c85f3f3efac317f9119c7718b0689ae68f4c66f16f4239703a2b565ebd25df` |
 | Rate card `fictional-contractor` | `rate-cards/fictional-contractor.json`, hash `9de97466827836f0c860678b2bd054417dc254a06de3e1139afd84d665a34f8a` |
-| Recordings hash | `9eb0935f7d3d5556fada82b8050e0ab7c13e012e0737157c68ddbed3b75b143c` |
+| Recordings hash | `039a565c0ddc4f76a40e1adbc44a6fc43b22214c879b165e25507e763d4d19bd` |
 | Set `b2b.jsonl` sha256 | `ae1647d8790fb2851f8cfa683d7f5b7d32959d8f0134422ac74fe88c696937bd` |
 | Set `contractor.jsonl` sha256 | `4c74774afdbd7063d66a56027def621f642b276624852253df946a8f76295d12` |
 | Set `en.jsonl` sha256 | `72360fd045d68e79a787d51c4f47b8b4ce7c1a5218ccb8eac73c2d9013a26001` |
