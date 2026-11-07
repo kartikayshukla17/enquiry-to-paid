@@ -1,0 +1,39 @@
+{
+  "id": "owner-01",
+  "comment": "FICTIONAL. The owner channel as a simulated WhatsApp thread: refusal escalations with quick replies, why, quote/decline/call them, a staff member who may only read, and the daily digest. All phone numbers are obviously fictional (+91 00000 xxxxx); customerRefs are labels, not numbers.",
+  "tenant": { "id": "tenant-owner-demo", "name": "FICTIONAL: Marigold Hall" },
+  "rateCard": "rate-cards/fictional-banquet-seasonal.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-own1",
+  "availability": { "blockedDates": [] },
+  "owners": [
+    { "role": "owner", "phone": "+91 00000 00001" },
+    { "role": "manager", "phone": "+91 00000 00002" },
+    { "role": "staff", "phone": "+91 00000 00003" }
+  ],
+  "messages": [
+    {
+      "text": "Wedding on 13 June 2027 for about 300 guests, what would it cost?",
+      "extracted": { "service": "banquet", "date": "2027-06-13", "guestCount": 300, "language": "en", "confidenceBps": 9100 },
+      "now": "2026-11-07T10:01:00Z"
+    },
+    { "owner": "+91 00000 00001", "text": "why", "now": "2026-11-07T10:02:00Z" },
+    { "owner": "+91 00000 00003", "text": "quote Rs 85,000", "now": "2026-11-07T10:03:00Z" },
+    { "owner": "+91 00000 00001", "text": "quote Rs 85,000", "now": "2026-11-07T10:04:00Z" },
+    {
+      "text": "Reception on 20 June 2027 for 280 guests please",
+      "extracted": { "service": "banquet", "date": "2027-06-20", "guestCount": 280, "language": "en", "confidenceBps": 9100 },
+      "customerRef": "fixture-customer-own2",
+      "now": "2026-11-07T11:00:00Z"
+    },
+    { "owner": "+91 00000 00002", "text": "decline", "now": "2026-11-07T11:05:00Z" },
+    {
+      "text": "Birthday on 27 June 2027, 260 guests",
+      "extracted": { "service": "banquet", "date": "2027-06-27", "guestCount": 260, "language": "en", "confidenceBps": 9100 },
+      "customerRef": "fixture-customer-own3",
+      "now": "2026-11-07T12:00:00Z"
+    },
+    { "owner": "+91 00000 00001", "text": "call them", "now": "2026-11-07T12:05:00Z" },
+    { "digest": true, "now": "2026-11-08T08:00:00Z" }
+  ]
+}

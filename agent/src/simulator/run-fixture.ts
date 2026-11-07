@@ -21,6 +21,8 @@ import { setKillSwitch } from "../killswitch/index.js";
 import { DEMO_WEBHOOK_SECRET, razorpaySim } from "../payments/razorpay-sim.js";
 import { handleWebhook, type WebhookResult } from "../payments/webhook.js";
 import { createHmac } from "node:crypto";
+import { composeNotifiers, createOwnerNotifier } from "../owner/notifier.js";
+import { seedOwnerMembers } from "../owner/seed.js";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const AGENT_ROOT = path.join(REPO_ROOT, "agent");
@@ -47,17 +49,32 @@ interface Fixture {
   holds?: boolean;
   /** `razorpay-sim`: quote replies carry a simulated payment link, and `{ pay: true }` steps deliver a signed paid webhook. */
   payments?: "razorpay-sim";
+  /**
+   * Owner channel (T17): members seeded with a hashed phone (FICTIONAL numbers, +91 00000 xxxxx). When present, refusal
+   * escalations are also delivered to the owner and manager, and `owner` / `digest` steps are available.
+   */
+  owners?: { role: "owner" | "manager" | "staff"; phone: string }[];
 }
 
 /**
  * One step. A message may override `customerRef` (a different customer = a different thread) and `now` (the
  * injected clock for that step). `{ tick: true, now }` runs the due timers instead of sending a message.
  */
+type NoStep = { tick?: undefined; killSwitch?: undefined; pay?: undefined; owner?: undefined; digest?: undefined };
 type FixtureMessage =
-  | { tick: true; now: string; killSwitch?: undefined; pay?: undefined }
-  | { killSwitch: "on" | "off"; scope?: "tenant" | "global"; now: string; tick?: undefined; pay?: undefined }
-  | { pay: true; now: string; killSwitch?: undefined; tick?: undefined }
-  | { killSwitch?: undefined; pay?: undefined; tick?: false; text: string; extracted?: Partial<ExtractedFields>; customerRef?: string; now?: string };
+  | (Omit<NoStep, "tick"> & { tick: true; now: string })
+  | (Omit<NoStep, "killSwitch"> & { killSwitch: "on" | "off"; scope?: "tenant" | "global"; now: string })
+  | (Omit<NoStep, "pay"> & { pay: true; now: string })
+  /** A text from the sender with this phone: an owner/manager/staff member is routed to the owner channel, anyone else is a customer. */
+  | (Omit<NoStep, "owner"> & { owner: string; text: string; now: string })
+  | (Omit<NoStep, "digest"> & { digest: true; now: string })
+  | (NoStep & { text: string; extracted?: Partial<ExtractedFields>; customerRef?: string; now?: string });
+
+/** One line of the simulated owner WhatsApp thread, in order. */
+export type OwnerLine =
+  | { dir: "to_owner"; kind: "escalation" | "digest" | "reply"; to: string; text: string; at: string }
+  | { dir: "from_owner"; from: string; text: string; at: string }
+  | { dir: "to_customer"; threadId: string; text: string; at: string };
 
 export interface RunResult {
   reply: string;
@@ -65,11 +82,13 @@ export interface RunResult {
   fields: ExtractedFields & { date: string; guestCount: number };
   ledgerRow: LedgerRow;
   /** One entry per message processed, in order (the top-level fields describe the last). */
-  turns: Omit<RunResult, "turns" | "ticks" | "payments">[];
+  turns: Omit<RunResult, "turns" | "ticks" | "payments" | "ownerTranscript">[];
   /** One entry per `tick` step: what the timer worker did at that clock. */
   ticks?: { at: string; processed: number; expiredHolds: string[] }[];
   /** One entry per `pay` step: what the webhook handler did with the simulated signed paid event. */
   payments?: (WebhookResult | { status: "no_link" })[];
+  /** The simulated owner thread (only when the fixture declares `owners`). */
+  ownerTranscript?: OwnerLine[];
 }
 
 export interface RunOptions {
@@ -116,6 +135,14 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
   const selected = opts.only === undefined ? messages : [messages[opts.only]].filter((m) => m !== undefined);
   if (selected.length === 0) throw new Error(`fixture ${fx.id} has no message ${opts.only}`);
 
+  const transcript: OwnerLine[] = [];
+  if (fx.owners) await seedOwnerMembers(opts.pool, fx.tenant.id, fx.owners);
+  const ownerOutbox = {
+    send: (m: { role: string; kind: "escalation" | "digest"; text: string; at: string }) => {
+      transcript.push({ dir: "to_owner", kind: m.kind, to: m.role, text: m.text, at: m.at });
+      return Promise.resolve();
+    },
+  };
   const payments = fx.payments === "razorpay-sim" ? razorpaySim({ webhookSecret: DEMO_WEBHOOK_SECRET }) : undefined;
   const paid: NonNullable<RunResult["payments"]> = [];
   const turns: RunResult["turns"] = [];
@@ -156,6 +183,9 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
       paid.push(await handleWebhook({ pool: opts.pool, kernel, payments }, body, headers, m.now));
       continue;
     }
+    if (m.owner !== undefined || m.digest) {
+      continue; // owner steps arrive in the next slice
+    }
     if (m.tick) {
       const done = await runDueTimers(opts.pool, m.now, { kernel });
       ticks.push({ at: new Date(m.now).toISOString(), processed: done.processed, expiredHolds: done.expiredHolds });
@@ -171,7 +201,8 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
       availability: fx.availability,
       message: m.text,
     };
-    const notifier = opts.notifier ?? createLogNotifier();
+    const base = opts.notifier ?? createLogNotifier();
+    const notifier = fx.owners ? composeNotifiers(base, createOwnerNotifier({ pool: opts.pool, kernel, outbox: ownerOutbox })) : base;
     let res;
     if (m.extracted === undefined) {
       llm ??= createProvider();
@@ -181,6 +212,6 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
     }
     turns.push({ reply: res.reply, quote: res.outcome, fields: res.fields as RunResult["fields"], ledgerRow: res.ledgerRow });
   }
-  const last = turns[turns.length - 1] as Omit<RunResult, "turns" | "ticks" | "payments">;
-  return { ...last, turns, ...(ticks.length > 0 && { ticks }), ...(paid.length > 0 && { payments: paid }) };
+  const last = turns[turns.length - 1] as Omit<RunResult, "turns" | "ticks" | "payments" | "ownerTranscript">;
+  return { ...last, turns, ...(ticks.length > 0 && { ticks }), ...(paid.length > 0 && { payments: paid }), ...(fx.owners && { ownerTranscript: transcript }) };
 }
