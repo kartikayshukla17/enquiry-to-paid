@@ -16,6 +16,8 @@ import { runDueTimers } from "../timers/run.js";
 import { seedApprovedCard } from "../ratecard/legacy.js";
 import { loadCardSource } from "../ratecard/source.js";
 import { publishDraft } from "../ratecard/store.js";
+import { legacyOwner } from "../ratecard/legacy.js";
+import { setKillSwitch } from "../killswitch/index.js";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const AGENT_ROOT = path.join(REPO_ROOT, "agent");
@@ -47,8 +49,9 @@ interface Fixture {
  * injected clock for that step). `{ tick: true, now }` runs the due timers instead of sending a message.
  */
 type FixtureMessage =
-  | { tick: true; now: string }
-  | { tick?: false; text: string; extracted?: Partial<ExtractedFields>; customerRef?: string; now?: string };
+  | { tick: true; now: string; killSwitch?: undefined }
+  | { killSwitch: "on" | "off"; scope?: "tenant" | "global"; now: string; tick?: undefined }
+  | { killSwitch?: undefined; tick?: false; text: string; extracted?: Partial<ExtractedFields>; customerRef?: string; now?: string };
 
 export interface RunResult {
   reply: string;
@@ -110,6 +113,13 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
   const availability = fx.holds ? nativeAvailability : undefined;
   let llm = opts.llm;
   for (const m of selected) {
+    if (m.killSwitch) {
+      // Tenant scope: flipped by the fixture tenant's seeded owner member. Global scope: by a fixture platform operator.
+      const target = m.scope === "global" ? ({ kind: "global" } as const) : ({ kind: "tenant", tenantId: fx.tenant.id } as const);
+      const actor = m.scope === "global" ? { operator: "fixture-operator" } : { memberId: legacyOwner(fx.tenant.id) };
+      await setKillSwitch({ pool: opts.pool, kernel }, { target, on: m.killSwitch === "on", actor, now: m.now });
+      continue;
+    }
     if (m.tick) {
       const done = await runDueTimers(opts.pool, m.now, { kernel });
       ticks.push({ at: new Date(m.now).toISOString(), processed: done.processed, expiredHolds: done.expiredHolds });

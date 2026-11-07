@@ -37,6 +37,8 @@ export function describeReason(reason: RefusalReason): string {
       return "Request falls outside the owner's policy";
     case "calendar_mismatch":
       return "Requested date does not match the calendar";
+    case "kill_switch":
+      return "Kill switch is on: the agent is refusing every enquiry until it is switched off";
     default:
       return assertNever(reason);
   }

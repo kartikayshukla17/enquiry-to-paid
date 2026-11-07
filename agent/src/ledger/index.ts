@@ -4,7 +4,7 @@ import type { KernelBridge } from "../kernel/index.js";
 export type LedgerType =
   | "enquiry" | "extraction" | "quote" | "refusal" | "hold" | "owner_message"
   | "payment_link" | "collected" | "chase" | "correction" | "disclosure"
-  | "rate_card_approved" | "rate_card_rejected";
+  | "rate_card_approved" | "rate_card_rejected" | "kill_switch_changed";
 
 export interface LedgerRow {
   /** Global row id (primary key); what `corrects` points at. */

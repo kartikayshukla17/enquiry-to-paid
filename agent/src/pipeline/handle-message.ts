@@ -6,6 +6,8 @@ import type { Notifier } from "../escalation/index.js";
 import type { LlmProvider } from "../llm/types.js";
 import { makeReplyWorder } from "../llm/word-reply.js";
 import type { PiiKeys } from "../security/pii.js";
+import { readKillSwitch } from "../killswitch/index.js";
+import { withTenant } from "../tenancy/with-tenant.js";
 import { handleEnquiry, type EnquiryInput, type EnquiryResult, type Provenance } from "./handle-enquiry.js";
 
 export interface MessageDeps {
@@ -32,7 +34,8 @@ export async function handleMessage(
   deps: MessageDeps,
   e: Omit<EnquiryInput, "fields" | "provenance" | "extractionFailure">,
 ): Promise<EnquiryResult> {
-  const ext = await extractFields(deps.llm, e.message);
+  // The very first thing: if the kill switch is on, the customer text goes nowhere (no extraction, no LLM call).
+  const ks = await withTenant(deps.pool, e.tenant.id, (c) => readKillSwitch(c, e.tenant.id)); // a failed read throws: fail closed, never fail open
   const inner = {
     pool: deps.pool,
     kernel: deps.kernel,
@@ -42,6 +45,10 @@ export async function handleMessage(
     ...(deps.lowConfidenceBps !== undefined && { lowConfidenceBps: deps.lowConfidenceBps }),
     ...(deps.wordReplies && { worder: makeReplyWorder(deps.llm) }),
   };
+  if (ks.on) {
+    return handleEnquiry(inner, { ...e, fields: {}, killSwitchSeen: { scope: ks.scope } });
+  }
+  const ext = await extractFields(deps.llm, e.message);
   if (ext.ok) {
     const m = ext.meta;
     const provenance = { modelId: m.modelId, provider: m.provider, region: m.region, costMinor: m.usage.costMinor ?? 0 };

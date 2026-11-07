@@ -3,6 +3,7 @@
  * Tests enumerate all tables and fail for any table that is neither tenant-scoped nor listed here.
  */
 export const TENANT_EXEMPT: Record<string, string> = {
+  kill_switch_global: "the platform-wide kill switch is one row that applies to every tenant, so it has no tenant_id; e2p_app may only SELECT it (0009_kill_switch.sql)",
   schema_migrations: "migration bookkeeping, no tenant data; the app role has no grant on it",
   user: "Better Auth: looked up by email before a tenant is known; no privileges for e2p_app/anon/authenticated (0005_auth.sql)",
   session: "Better Auth: looked up by token before a tenant is known; no privileges for e2p_app/anon/authenticated",

@@ -1,0 +1,27 @@
+{
+  "id": "kill-switch-01",
+  "comment": "FICTIONAL. The owner flips the tenant kill switch mid-conversation: the message while it is on gets a holding reply and no quote; after it is flipped back, quoting resumes.",
+  "tenant": { "id": "tenant-rose-court", "name": "FICTIONAL: Rose Court Banquets" },
+  "rateCard": "rate-cards/fictional-banquet.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-ks1",
+  "availability": { "blockedDates": [] },
+  "messages": [
+    {
+      "text": "Hi, 120 guests on 12 December 2026 for an engagement. Quote please?",
+      "extracted": { "service": "banquet", "date": "2026-12-12", "guestCount": 120, "language": "en", "confidenceBps": 9200 }
+    },
+    { "killSwitch": "on", "scope": "tenant", "now": "2026-11-07T10:05:00Z" },
+    {
+      "text": "Can you confirm the price again?",
+      "extracted": { "language": "en", "confidenceBps": 9300 },
+      "now": "2026-11-07T10:06:00Z"
+    },
+    { "killSwitch": "off", "scope": "tenant", "now": "2026-11-07T10:10:00Z" },
+    {
+      "text": "Hello? Price for the same date please.",
+      "extracted": { "language": "en", "confidenceBps": 9300 },
+      "now": "2026-11-07T10:11:00Z"
+    }
+  ]
+}

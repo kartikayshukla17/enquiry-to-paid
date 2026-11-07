@@ -138,6 +138,7 @@ export function holdingReply(reason: RefusalReason): string {
     case "low_confidence":
     case "missing_required_field":
     case "calendar_mismatch":
+    case "kill_switch":
       return "Thank you for your enquiry! This one needs a personal look from our team, so I have passed it to them. They will get back to you shortly with the details.";
     case "date_unavailable":
       return "Thank you for your enquiry! I am not able to confirm that date right now, so I have passed it to our team. They will get back to you shortly with options.";

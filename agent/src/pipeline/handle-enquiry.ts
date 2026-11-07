@@ -12,6 +12,7 @@ import { alternativeDates, holdHoursOf, offersAlternatives, priorQuoteExpired, t
 import { EXPIRED_QUOTE_PREFIX, disclosureReply, formatInstantInZone, holdingReply, renderReply, replyTemplate, unavailableReply, type ReplyContext } from "./reply.js";
 import { encryptPii, phoneHash, piiKeysFromEnv, type PiiKeys } from "../security/pii.js";
 import { withTenant } from "../tenancy/with-tenant.js";
+import { readKillSwitch, type KillScope } from "../killswitch/index.js";
 
 export interface EnquiryInput {
   tenant: { id: string; name: string };
@@ -27,6 +28,8 @@ export interface EnquiryInput {
   provenance?: Provenance;
   /** Extraction failed (provider error or schema-invalid output): nothing to merge, never a quote. */
   extractionFailure?: { code: string; detail: string };
+  /** handleMessage saw the kill switch on before extraction (so no LLM ran). Conservative: stays on even if flipped off since. */
+  killSwitchSeen?: { scope: KillScope };
 }
 
 export interface Provenance {
@@ -151,6 +154,10 @@ async function decide(
     const gated = failure !== undefined || lowConf;
     // Activation gate: the pipeline quotes only from the tenant's APPROVED snapshot of this card, re-hashed by the kernel.
     // The card the caller passed names which card is meant (`id`); its content is never used to price.
+    // Kill switch: read inside this transaction, before the card gate and the kernel. While on, nothing below the
+    // kill branch runs, so no quote and no hold are possible.
+    const ks = await readKillSwitch(client, e.tenant.id);
+    const killed = ks.on ? ks : e.killSwitchSeen ? { on: true as const, scope: e.killSwitchSeen.scope } : undefined;
     const gate = await loadActiveCard(client, deps.kernel, e.tenant.id, (e.rateCard as { id: string }).id);
     const card: unknown = gate.ok ? gate.card : e.rateCard;
     const cardHash = gate.ok ? gate.hash : undefined;
@@ -167,7 +174,19 @@ async function decide(
     let clarifying = false;
     const holdEvents: { threadId: string; payload: Record<string, unknown> }[] = [];
     let wording: Provenance | undefined;
-    if (gated) {
+    if (killed) {
+      // Refuse-everything mode: typed refusal, holding reply, escalation (after commit). The message text is only logged;
+      // nothing merges into the thread, no card is priced, no hold is placed.
+      fields = (stored?.fields as unknown as ExtractedFields | undefined) ?? { language: "unknown", confidenceBps: 0 };
+      outcome = { kind: "refusal", reason: "kill_switch", ruleGap: `kill_switch_${killed.scope}` };
+      reply = holdingReply("kill_switch");
+      await appendEntry(client, deps.kernel, {
+        ...base,
+        type: "extraction",
+        payload: { status: "kill_switch", scope: killed.scope },
+        ...(e.provenance ?? FIXTURE_PROVENANCE),
+      });
+    } else if (gated) {
       // Gate: this read is untrusted. Nothing merges into the thread, the kernel is not consulted, no quote is possible.
       fields = (stored?.fields as unknown as ExtractedFields | undefined) ?? { language: "unknown", confidenceBps: 0 };
       outcome = { kind: "refusal", reason: "low_confidence", ...(failure && { ruleGap: `extraction_${failure.code}` }) };
@@ -280,7 +299,7 @@ async function decide(
     for (const h of holdEvents) await appendEntry(client, deps.kernel, { ...base, threadId: h.threadId, type: "hold", payload: h.payload });
     // A clarifying question keeps the thread open; the follow-up message completes it. A gated read leaves stored fields alone.
     const state = outcome.kind === "disclosure" ? (stored?.state ?? "open") : outcome.kind === "quote" ? "quoted" : clarifying ? "open" : "refused";
-    if (gated) await client.query("UPDATE threads SET state = $2 WHERE id = $1", [e.threadId, state]);
+    if (gated || killed) await client.query("UPDATE threads SET state = $2 WHERE id = $1", [e.threadId, state]);
     else await client.query("UPDATE threads SET state = $2, fields = $3::jsonb WHERE id = $1", [e.threadId, state, JSON.stringify(fields)]);
     return { outcome, reply, ledgerRow, fields, clarifying };
   });

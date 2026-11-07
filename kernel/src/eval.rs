@@ -26,7 +26,7 @@ pub struct Line {
     pub rule_id: String,
 }
 
-// Variants not yet produced (low_confidence is gated in the agent, calendar_mismatch is T10) exist now so
+// Variants not yet produced (low_confidence and kill_switch are gated in the agent, calendar_mismatch is T10) exist now so
 // the reason set is closed and exhaustively matched.
 #[allow(dead_code)]
 pub enum RefusalReason {
@@ -37,6 +37,8 @@ pub enum RefusalReason {
     LowConfidence,
     OutOfPolicy,
     CalendarMismatch,
+    /// The owner (or operator) switched the agent to refuse-everything; produced by the agent before the kernel is consulted.
+    KillSwitch,
 }
 
 impl RefusalReason {
@@ -51,6 +53,7 @@ impl RefusalReason {
             RefusalReason::LowConfidence => "low_confidence",
             RefusalReason::OutOfPolicy => "out_of_policy",
             RefusalReason::CalendarMismatch => "calendar_mismatch",
+            RefusalReason::KillSwitch => "kill_switch",
         }
     }
 }

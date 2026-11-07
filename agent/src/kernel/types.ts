@@ -34,6 +34,7 @@ export const REFUSAL_REASONS = [
   "low_confidence",
   "out_of_policy",
   "calendar_mismatch",
+  "kill_switch",
 ] as const;
 
 export type RefusalReason = (typeof REFUSAL_REASONS)[number];
