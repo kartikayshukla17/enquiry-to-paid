@@ -47,3 +47,39 @@ Tickets done: T0 to T14 (T15+ and T27 skipped as instructed). T11-T13 were done 
 - CI not yet observed on GitHub (CI pnpm 10 vs local 12; lockfile mismatch possible). Local Postgres is 17, not 18.
 - Ledger head row is writable by an owner who disables triggers; no external anchoring. Composite tenant FKs not done.
 - The sandbox blocked shell commands containing the words eval and enable, so `pnpm provider enable` and `pnpm run eval` were exercised via tests or direct tsx.
+
+---
+
+# Post-v0 session: PRE fixes, T28, T15-T19 (simulated services)
+
+Method this time: one implementer subagent per ticket (tdd, red -> green, tests at public seams), then a SEPARATE task-reviewer subagent per ticket (spec + quality), scoped fix rounds, re-review after each fix round. Every ticket below had a reviewer; fix rounds: PRE 0, T28 0, T15 1, T16 0, T17 1, T18 2, T19 3. All data fictional; Razorpay, Stripe and WhatsApp are simulated with HMAC-signature test doubles; no network or real keys in tests. Final check: `pnpm test` 725 agent tests + cargo green, `pnpm lint:agent` clean, `pnpm adversarial` 0 quotes, `pnpm ledger verify` OK, offline eval `--check` OK.
+
+## Tickets done
+- PRE: CI pins pnpm via `packageManager` (12.16.1); `intent` is now required in extraction (omitted => schema-invalid => holding reply, 0 quotes); LLM wording no longer runs inside a DB transaction (decide, roll back, word, re-decide and commit). Also a guard-test fix in sim web (card allowlist from `rate-cards/`) and a 30s vitest timeout for a flaky double-run eval test.
+- T28: kill switch (global and per tenant), checked at pipeline start and re-read inside the decision txn; flips are ledger entries (`kill_switch_changed`); `kill_switch` refusal reason; owner-only flip; `pnpm sim kill`.
+- T15: `PaymentProvider` + Razorpay sim; signed webhook is the only `collected` writer (guard test); idempotency keyed on the signed body hash; amount/currency mismatch never collects; `ledger proof` (billable yes/no + why); payments tables with forced RLS.
+- T16: Stripe Payment Links sim (`t=,v1=` signature with timestamp tolerance on an injected clock); per-tenant provider selection; one contract suite over both providers.
+- T17: simulated owner WhatsApp interface: deterministic daily digest, refusal escalations with quote/decline/call-them quick replies, "why" from the ledger, role enforcement (owner/manager only for price commands), `owner_quote` ledger kind.
+- T18: owner takeover pauses the thread (customer messages held and surfaced to the owner), explicit handback or 12h idle resume via durable timers, owner-sent prices are non-billable in proof.
+- T19: consent-gated 24h/72h chasers then stop, multilingual stop-words, 24h-window template vs free text, send-time re-checks under row locks, hashed customer key in ledger payloads.
+
+## Rulings (all in this session; full text in agent/README.md and the implementer reports)
+- Controller scripts (task-brief, review-package) were blocked by the worktree git guard, so briefs and diffs were produced by hand in a scratchpad; ledger kept there.
+- Kill switch also blocks owner `quote` commands (T28 done-when is literal); decline/call-them/why/digest keep working. Cost: owner cannot price during an outage.
+- Owner free text on a paused thread is relayed verbatim to the customer (revises T17's templated-only rule); a price-looking owner reply is refused under the kill switch.
+- Price detection errs toward non-billable (digits, currency, magnitude, tens, "free"); "I am free Saturday" and "grand" are false positives; bare teens like "pachees" and variant spellings are misses.
+- `PaymentProvider.verifyWebhook` signature is `(headers, rawBody, now)` because Stripe's composite header needs the injected clock.
+- Webhook idempotency keys on signed content, never unsigned headers; a repeat for an already-collected payment is `duplicate` with no ledger write; collected thread state is terminal.
+- Hold lapse does not cancel chasers (ticket says only 24h/72h); a send-time date-still-free recheck does instead. Chaser text never claims a hold.
+- Stop-word guard only applies to "stop <verb>" directly after a negation; `unsubscribe`/`opt out` are unguarded (over-stopping is the safe side). "please don't stop messaging me" is not a stop.
+- Consent/stop/chaser ledger payloads carry a hashed customer key and digit-redacted text, never raw phone.
+- Nothing else was waived: no reviewer was skipped.
+
+## Unfinished / known gaps
+- Not done by scope: T20-T27, T29 (real credentials, Google OAuth, real WhatsApp number, non-code work). No real Razorpay/Stripe/WhatsApp adapters, no HTTP webhook route (the `handleWebhook` function seam is tested), no refunds/failed-payment events, no check that the quote was still valid at payment time, link creation runs inside the decision txn (fine for sim only).
+- Kill switch: a global flip with zero tenants writes no ledger entry; tenants created after a flip have none; flip actor is unauthenticated at the CLI.
+- Stripe demo collects INR (card currency); `sim run` fixtures only know the Razorpay sim; provider switch has no ledger entry or auth gate.
+- Owner: digest has no scheduler or date header; no real WhatsApp send; no owner notice on idle resume; held customer message is not replayed after resume; takeover has no `sim` fixture steps for idle.
+- Chasers: opt-in/unsubscribe wording is English only; no way back in after STOP; owner-priced threads get no chasers; the availability re-check uses native availability (T21 must thread the Calendar provider); outbox addressee is the raw customer row id (send side only).
+- Deferred minors: `ExtractedFields.intent` type still optional, extraction prompt does not say intent is mandatory, wording fallback after 3 attempts untested; stale payments README line 16 and webhook.ts header comment still mention event-id replay; second genuine payment on a collected thread is silently `duplicate` (no refund signal); `collected` guard is a source grep, not a DB constraint.
+- Not observed: CI on GitHub with the new pnpm pin (pushed, not yet seen green).
