@@ -43,7 +43,7 @@ export async function handleWebhook(
 ): Promise<WebhookResult> {
   const lower: Record<string, string | undefined> = {};
   for (const [k, v] of Object.entries(headers)) lower[k.toLowerCase()] = v;
-  if (!deps.payments.verifyWebhook(lower["x-razorpay-signature"], rawBody)) return { status: "rejected", reason: "bad_signature" };
+  if (!deps.payments.verifyWebhook(lower, rawBody, now)) return { status: "rejected", reason: "bad_signature" };
   const ev = deps.payments.parseEvent(rawBody, lower);
   if (!ev) return { status: "rejected", reason: "unparseable" };
   if (ev.kind !== "paid") return { status: "ignored", reason: "not_a_payment_event" };

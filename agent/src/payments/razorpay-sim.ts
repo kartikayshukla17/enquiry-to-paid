@@ -29,7 +29,8 @@ export function razorpaySim(cfg: RazorpaySimConfig): PaymentProvider {
       const id = `pl_${createHash("sha256").update(`${req.tenantId}|${req.paymentId}`).digest("hex").slice(0, 14)}`;
       return { providerLinkId: id, url: `https://rzp.sim.invalid/${id}` };
     },
-    verifyWebhook(signature, rawBody) {
+    verifyWebhook(headers, rawBody) {
+      const signature = headers["x-razorpay-signature"];
       if (typeof signature !== "string" || !/^[0-9a-f]{64}$/i.test(signature)) return false;
       return timingSafeEqual(Buffer.from(signature.toLowerCase(), "hex"), expected(rawBody));
     },
