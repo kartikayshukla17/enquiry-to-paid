@@ -20,6 +20,7 @@ import { issuePaymentLinkInTxn } from "../payments/issue.js";
 import { isCollectedState } from "../payments/webhook.js";
 import type { PaymentProvider } from "../payments/types.js";
 import { providerForTenant, type ProviderRegistry } from "../payments/registry.js";
+import { OPT_IN_QUESTION, appendConsent, cancelChaser, consentOf, lockChaserTimer, scheduleChaser } from "../chasers/consent.js";
 
 export interface EnquiryInput {
   tenant: { id: string; name: string };
@@ -75,6 +76,8 @@ export interface EnquiryResult {
   fields: ExtractedFields;
   /** The thread is paused for the owner (T18): the customer message was stored and shown to the owner; `reply` is empty and nothing may be sent. */
   held?: true;
+  /** The text was a consent answer (T19), settled by code: `reply` is the fixed confirmation (empty when there is nothing new to tell). */
+  consent?: "granted" | "revoked";
 }
 
 /** Thrown inside the decision transaction (which then rolls back, leaving no trace) when the reply needs LLM wording. */
@@ -153,7 +156,7 @@ interface Decision {
   surface?: { to: Member[]; text: string; ref: string | null };
 }
 
-type Deps = { ownerOutbox?: OwnerOutbox; pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider; payments?: PaymentProvider; paymentProviders?: ProviderRegistry };
+type Deps = { ownerOutbox?: OwnerOutbox; pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider; payments?: PaymentProvider; paymentProviders?: ProviderRegistry; chasers?: true };
 
 /**
  * Thread paused for the owner (T18): the customer's text is stored on the ledger (marked `heldForOwner`) and shown to every
@@ -180,6 +183,8 @@ async function decide(
 ): Promise<Decision> {
   // Everything below runs as the unprivileged app role with app.tenant_id set (RLS applies).
   return withTenant(deps.pool, e.tenant.id, async (client) => {
+    // Chaser timer row first, then the thread: the order the timer worker and the stop handler use (no deadlock between them).
+    if (deps.chasers) await lockChaserTimer(client, e.tenant.id, e.threadId);
     await client.query("INSERT INTO tenants (id, name) VALUES ($1,$2) ON CONFLICT (id) DO NOTHING", [e.tenant.id, e.tenant.name]);
     const customerId = `${e.tenant.id}:cust:${e.customerRef}`;
     await client.query(
@@ -365,6 +370,18 @@ async function decide(
         tenantId: e.tenant.id, threadId: e.threadId, quote: { seq: ledgerRow.seq, amountMinor: outcome.total, currency: outcome.currency }, now: e.now,
       });
       if (issued.ok) reply = `${reply}\n\n${issued.link.replyText}`;
+    }
+    if (deps.chasers) {
+      // The customer wrote: any reminder still pending is moot. A fresh quote then starts its own, asking for opt-in if there is none yet.
+      await cancelChaser(client, deps.kernel, { tenantId: e.tenant.id, threadId: e.threadId, reason: "customer_reply", at: e.now });
+      if (outcome.kind === "quote" && !killed) {
+        const cs = await consentOf(client, e.tenant.id, customerId);
+        if (cs.status === "none" || cs.status === "requested") {
+          reply = `${reply}\n\n${OPT_IN_QUESTION}`;
+          if (cs.status === "none") await appendConsent(client, deps.kernel, { tenantId: e.tenant.id, threadId: e.threadId, customerId, action: "requested", source: "quote_reply", at: e.now, extra: { quoteSeq: ledgerRow.seq } });
+        }
+        await scheduleChaser(client, e.tenant.id, e.threadId, e.now);
+      }
     }
     // A clarifying question keeps the thread open; the follow-up message completes it. A gated read leaves stored fields alone.
     const state = outcome.kind === "disclosure" ? (stored?.state ?? "open") : outcome.kind === "quote" ? "quoted" : clarifying ? "open" : "refused";

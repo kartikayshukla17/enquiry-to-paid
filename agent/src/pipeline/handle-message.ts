@@ -11,6 +11,7 @@ import type { PaymentProvider } from "../payments/types.js";
 import type { ProviderRegistry } from "../payments/registry.js";
 import { readKillSwitch } from "../killswitch/index.js";
 import { withTenant } from "../tenancy/with-tenant.js";
+import { handleConsentMessage } from "../chasers/consent.js";
 import { PauseRaced, handleEnquiry, type EnquiryInput, type EnquiryResult, type Provenance } from "./handle-enquiry.js";
 
 export interface MessageDeps {
@@ -30,6 +31,8 @@ export interface MessageDeps {
   paymentProviders?: ProviderRegistry;
   /** Where a customer message on a thread paused for the owner is shown to them (T18). */
   ownerOutbox?: OwnerOutbox;
+  /** Chasers (T19): quotes ask for opt-in and schedule reminders. Off by default, so existing replies are unchanged. */
+  chasers?: true;
 }
 
 const UNKNOWN: Omit<Provenance, "costMinor"> = { modelId: "unknown", provider: "unknown", region: "unknown" };
@@ -54,6 +57,9 @@ export async function handleMessage(
 }
 
 async function handleOnce(deps: MessageDeps, e: Omit<EnquiryInput, "fields" | "provenance" | "extractionFailure" | "pausedSeen">): Promise<EnquiryResult> {
+  // A consent answer ("yes" to the opt-in question, a stop word) is settled by code before anything else: no model sees it.
+  const consent = await handleConsentMessage(deps, e);
+  if (consent) return consent;
   // A thread paused for the owner (T18) comes first: the text is stored and shown to the owner, no LLM sees it, nothing is sent back.
   const paused = await withTenant(deps.pool, e.tenant.id, async (c) => (await c.query("SELECT 1 FROM threads WHERE id=$1 AND state='paused_owner'", [e.threadId])).rowCount === 1);
   // The very first thing: if the kill switch is on, the customer text goes nowhere (no extraction, no LLM call).
@@ -64,6 +70,7 @@ async function handleOnce(deps: MessageDeps, e: Omit<EnquiryInput, "fields" | "p
     notifier: deps.notifier,
     ...(deps.pii && { pii: deps.pii }),
     ...(deps.ownerOutbox && { ownerOutbox: deps.ownerOutbox }),
+    ...(deps.chasers && { chasers: deps.chasers }),
     ...(deps.availability && { availability: deps.availability }),
     ...(deps.payments && { payments: deps.payments }),
     ...(deps.paymentProviders && { paymentProviders: deps.paymentProviders }),

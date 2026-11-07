@@ -2,6 +2,8 @@ import type { Pool, PoolClient } from "pg";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import { GENESIS_HASH, appendEntry } from "../ledger/index.js";
 import { idleResumeInTxn } from "../owner/takeover.js";
+import { runChaserInTxn } from "../chasers/run.js";
+import type { ChaserOutbox } from "../chasers/types.js";
 import { APP_ROLE } from "../tenancy/with-tenant.js";
 
 export interface RunResult {
@@ -10,6 +12,8 @@ export interface RunResult {
   expiredHolds: string[];
   /** Threads the owner-idle timer handed back to the agent (T18). */
   resumedThreads: string[];
+  /** Chasers (T19) this call really sent, in order. */
+  chasersSent: { threadId: string; n: 1 | 2 }[];
 }
 
 interface DueTimer {
@@ -28,9 +32,9 @@ interface DueTimer {
  * a crash rolls the claim back and the timer is simply due again; `FOR UPDATE SKIP LOCKED` keeps two workers
  * off the same row. Marking a hold expired is idempotent (only an `active` hold changes), so a replay is a no-op.
  */
-export async function runDueTimers(pool: Pool, now: string, opts: { kernel?: KernelBridge } = {}): Promise<RunResult> {
+export async function runDueTimers(pool: Pool, now: string, opts: { kernel?: KernelBridge; chaserOutbox?: ChaserOutbox } = {}): Promise<RunResult> {
   const kernel = opts.kernel ?? (await loadKernel());
-  const result: RunResult = { processed: 0, expiredHolds: [], resumedThreads: [] };
+  const result: RunResult = { processed: 0, expiredHolds: [], resumedThreads: [], chasersSent: [] };
   for (;;) {
     const client = await pool.connect();
     try {
@@ -38,9 +42,9 @@ export async function runDueTimers(pool: Pool, now: string, opts: { kernel?: Ker
       const due = (
         await client.query<DueTimer>(
           `SELECT id, tenant_id, kind, subject_id FROM timers
-           WHERE status = 'pending' AND run_at <= $1::timestamptz
+           WHERE status = 'pending' AND run_at <= $1::timestamptz AND ($2::boolean OR kind <> 'chaser')
            ORDER BY run_at, id LIMIT 1 FOR UPDATE SKIP LOCKED`,
-          [now],
+          [now, opts.chaserOutbox !== undefined],
         )
       ).rows[0];
       if (!due) {
@@ -57,6 +61,11 @@ export async function runDueTimers(pool: Pool, now: string, opts: { kernel?: Ker
         const r = await idleResumeInTxn(client, kernel, { tenantId: due.tenant_id, threadId: due.subject_id, now });
         if (r.resumed) result.resumedThreads.push(due.subject_id);
         else retryAt = r.retryAt;
+      } else if (due.kind === "chaser" && opts.chaserOutbox) {
+        // Thread first, then the ledger head (the timer row is already ours): the order the pipeline and the stop handler use.
+        const r = await runChaserInTxn(client, kernel, opts.chaserOutbox, { tenantId: due.tenant_id, threadId: due.subject_id, now });
+        if (r.sent) result.chasersSent.push({ threadId: due.subject_id, n: r.sent });
+        retryAt = r.retryAt;
       } else {
         // Same lock order as the pipeline (ledger head first, then hold rows) so the two can never deadlock.
         await client.query(
