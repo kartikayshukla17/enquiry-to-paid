@@ -16,6 +16,7 @@ import { readKillSwitch, type KillScope } from "../killswitch/index.js";
 import { issuePaymentLinkInTxn } from "../payments/issue.js";
 import { isCollectedState } from "../payments/webhook.js";
 import type { PaymentProvider } from "../payments/types.js";
+import { providerForTenant, type ProviderRegistry } from "../payments/registry.js";
 
 export interface EnquiryInput {
   tenant: { id: string; name: string };
@@ -81,7 +82,7 @@ const MAX_WORDING_ATTEMPTS = 3;
  * Free text (`message`) is stored in the ledger only; it never reaches the kernel.
  */
 export async function handleEnquiry(
-  deps: { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider; payments?: PaymentProvider },
+  deps: Deps,
   e: EnquiryInput,
 ): Promise<EnquiryResult> {
   const pii = deps.pii ?? piiKeysFromEnv();
@@ -125,7 +126,7 @@ interface Decision {
   clarifying: boolean;
 }
 
-type Deps = { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider; payments?: PaymentProvider };
+type Deps = { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider; payments?: PaymentProvider; paymentProviders?: ProviderRegistry };
 
 async function decide(
   deps: Deps,
@@ -313,8 +314,10 @@ async function decide(
     for (const h of holdEvents) await appendEntry(client, deps.kernel, { ...base, threadId: h.threadId, type: "hold", payload: h.payload });
     // Payment link: code-written, appended after any model wording, for exactly the kernel total. Never while the kill switch
     // is on (`killed` is already false on this path, and issuePaymentLinkInTxn re-reads the flag itself).
-    if (outcome.kind === "quote" && deps.payments && !killed) {
-      const issued = await issuePaymentLinkInTxn(client, deps.kernel, deps.payments, {
+    // Per-tenant selection (T16): with a registry, the tenant's configured provider is used, and none configured means no link.
+    const provider = deps.paymentProviders ? await providerForTenant(client, e.tenant.id, deps.paymentProviders) : deps.payments;
+    if (outcome.kind === "quote" && provider && !killed) {
+      const issued = await issuePaymentLinkInTxn(client, deps.kernel, provider, {
         tenantId: e.tenant.id, threadId: e.threadId, quote: { seq: ledgerRow.seq, amountMinor: outcome.total, currency: outcome.currency }, now: e.now,
       });
       if (issued.ok) reply = `${reply}\n\n${issued.link.replyText}`;

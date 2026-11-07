@@ -14,6 +14,7 @@ import type { Pool } from "pg";
 import type { KernelBridge } from "../kernel/index.js";
 import { appendEntry } from "../ledger/index.js";
 import { withTenant } from "../tenancy/with-tenant.js";
+import type { ProviderRegistry } from "./registry.js";
 import type { PaymentProvider } from "./types.js";
 
 /** A collected thread is terminal (the pipeline reads this; it never writes the state). */
@@ -22,7 +23,7 @@ export const isCollectedState = (state: string | undefined): boolean => state ==
 export type WebhookResult =
   | { status: "collected"; threadId: string; paymentId: string; amountMinor: number }
   | { status: "duplicate" }
-  | { status: "rejected"; reason: "bad_signature" | "unparseable" }
+  | { status: "rejected"; reason: "bad_signature" | "unparseable" | "unknown_provider" }
   | { status: "ignored"; reason: "unknown_link" | "not_a_payment_event" }
   | { status: "mismatch"; reason: "amount_mismatch" | "currency_mismatch"; threadId: string; paymentId: string };
 
@@ -107,4 +108,16 @@ export async function handleWebhook(
     if ((e as { code?: string }).code === "23505" && /payment_events/.test((e as { constraint?: string }).constraint ?? "payment_events")) return { status: "duplicate" };
     throw e;
   }
+}
+
+/** The seam behind `POST /webhooks/payments/:provider`: the URL names the provider, whose secret and scheme alone verify the request. */
+export async function handleProviderWebhook(
+  deps: { pool: Pool; kernel: KernelBridge; providers: ProviderRegistry },
+  providerName: string,
+  rawBody: string,
+  headers: Record<string, string | undefined>,
+  now: string,
+): Promise<WebhookResult> {
+  if (!Object.hasOwn(deps.providers, providerName)) return { status: "rejected", reason: "unknown_provider" };
+  return handleWebhook({ pool: deps.pool, kernel: deps.kernel, payments: deps.providers[providerName] as PaymentProvider }, rawBody, headers, now);
 }

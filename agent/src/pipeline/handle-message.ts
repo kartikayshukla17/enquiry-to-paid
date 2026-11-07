@@ -7,6 +7,7 @@ import type { LlmProvider } from "../llm/types.js";
 import { makeReplyWorder } from "../llm/word-reply.js";
 import type { PiiKeys } from "../security/pii.js";
 import type { PaymentProvider } from "../payments/types.js";
+import type { ProviderRegistry } from "../payments/registry.js";
 import { readKillSwitch } from "../killswitch/index.js";
 import { withTenant } from "../tenancy/with-tenant.js";
 import { handleEnquiry, type EnquiryInput, type EnquiryResult, type Provenance } from "./handle-enquiry.js";
@@ -24,6 +25,8 @@ export interface MessageDeps {
   availability?: AvailabilityProvider;
   /** Payment provider (simulated in v0): when set, a quote reply carries a code-written payment link. */
   payments?: PaymentProvider;
+  /** Per-tenant provider selection (T16): takes precedence over `payments` when set. */
+  paymentProviders?: ProviderRegistry;
 }
 
 const UNKNOWN: Omit<Provenance, "costMinor"> = { modelId: "unknown", provider: "unknown", region: "unknown" };
@@ -46,6 +49,7 @@ export async function handleMessage(
     ...(deps.pii && { pii: deps.pii }),
     ...(deps.availability && { availability: deps.availability }),
     ...(deps.payments && { payments: deps.payments }),
+    ...(deps.paymentProviders && { paymentProviders: deps.paymentProviders }),
     ...(deps.lowConfidenceBps !== undefined && { lowConfidenceBps: deps.lowConfidenceBps }),
     ...(deps.wordReplies && { worder: makeReplyWorder(deps.llm) }),
   };
