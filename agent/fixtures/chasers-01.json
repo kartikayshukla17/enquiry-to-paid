@@ -1,0 +1,19 @@
+{
+  "id": "chasers-01",
+  "comment": "FICTIONAL. Chasers with consent: the quote asks for opt-in, the customer says haan, the 24h chaser goes as plain templated text, the 72h chaser as an approved template (outside the 24h window), then nothing more. All data fictional.",
+  "tenant": { "id": "tenant-chasers-demo", "name": "FICTIONAL: Marigold Hall" },
+  "rateCard": "rate-cards/fictional-banquet.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-ch1",
+  "availability": { "blockedDates": [] },
+  "chasers": true,
+  "messages": [
+    { "text": "Banquet on 12 December 2026 for 120 guests, what would it cost?", "extracted": { "service": "banquet", "date": "2026-12-12", "guestCount": 120, "language": "en", "confidenceBps": 9200 }, "now": "2026-11-07T10:01:00Z" },
+    { "text": "haan", "now": "2026-11-07T11:00:00Z" },
+    { "tick": true, "now": "2026-11-08T10:59:59Z" },
+    { "tick": true, "now": "2026-11-08T11:00:00Z" },
+    { "tick": true, "now": "2026-11-10T10:59:59Z" },
+    { "tick": true, "now": "2026-11-10T11:00:00Z" },
+    { "tick": true, "now": "2026-11-20T11:00:00Z" }
+  ]
+}

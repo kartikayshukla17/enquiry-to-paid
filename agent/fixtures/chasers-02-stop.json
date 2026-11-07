@@ -1,0 +1,18 @@
+{
+  "id": "chasers-02",
+  "comment": "FICTIONAL. Chasers with consent: opt-in, chaser 1 goes, the customer writes a Hinglish stop word, is told once that they are unsubscribed, and chaser 2 never goes.",
+  "tenant": { "id": "tenant-chasers-demo-2", "name": "FICTIONAL: Marigold Hall" },
+  "rateCard": "rate-cards/fictional-banquet.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-ch2",
+  "availability": { "blockedDates": [] },
+  "chasers": true,
+  "messages": [
+    { "text": "Banquet on 12 December 2026 for 120 guests, what would it cost?", "extracted": { "service": "banquet", "date": "2026-12-12", "guestCount": 120, "language": "en", "confidenceBps": 9200 }, "now": "2026-11-07T10:01:00Z" },
+    { "text": "yes", "now": "2026-11-07T10:30:00Z" },
+    { "tick": true, "now": "2026-11-08T10:30:00Z" },
+    { "text": "ruko", "now": "2026-11-08T12:00:00Z" },
+    { "text": "band karo", "now": "2026-11-08T12:05:00Z" },
+    { "tick": true, "now": "2026-11-10T10:30:00Z" }
+  ]
+}

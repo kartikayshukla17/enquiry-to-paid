@@ -480,4 +480,33 @@ describe("concurrency (real races, row locks)", () => {
     expect(sentTo(th).map((m) => m.n)).toEqual([1]);
   });
 });
+
+describe("tenancy", () => {
+  const B = { id: "tenant-chasers-b", name: "FICTIONAL: Other Banquets" };
+  it("one tenant's stop word does not touch the same phone's consent at another tenant, and neither can read the other's consent, chasers or timers", async () => {
+    await seedApprovedCard({ pool: db.pool, kernel }, { tenant: B, card, now: T0 });
+    const th = thread();
+    const mine = await optedIn(1);
+    const bThread = `${th}-b`;
+    const common = { customerRef: ref(mine.th), rateCard: card, availability: { blockedDates: [] } };
+    await handleEnquiry(deps(), { ...common, tenant: B, threadId: bThread, now: T0, message: "quote?", fields: { ...GOOD } });
+    await handleMessage(deps(), { ...common, tenant: B, threadId: bThread, now: at(1), message: "yes" });
+    await say(mine.th, "stop", at(2)); // tenant T's customer stops
+    expect((await consentStatus(db.pool, T.id, ref(mine.th))).status).toBe("revoked");
+    expect((await consentStatus(db.pool, B.id, ref(mine.th))).status).toBe("granted");
+    await tick(at(25));
+    expect(sent.filter((m) => m.tenantId === B.id && m.threadId === bThread)).toHaveLength(1);
+    expect(sentTo(mine.th)).toEqual([]);
+
+    // As tenant B (row-level security), none of tenant T's consent, stop, chaser or timer rows are visible, and none can be written.
+    const seen = await withTenant(db.pool, B.id, async (c) => ({
+      ledger: (await c.query("SELECT count(*)::int AS n FROM ledger_entries WHERE tenant_id=$1 AND type IN ('consent','stop','chaser_sent','chase')", [T.id])).rows[0].n,
+      timers: (await c.query("SELECT count(*)::int AS n FROM timers WHERE tenant_id=$1 AND kind='chaser'", [T.id])).rows[0].n,
+    }));
+    expect(seen).toEqual({ ledger: 0, timers: 0 });
+    await expect(
+      withTenant(db.pool, B.id, (c) => c.query("INSERT INTO timers (tenant_id, kind, subject_id, run_at) VALUES ($1,'chaser','x',now())", [T.id])),
+    ).rejects.toThrow(/row-level security/);
+  });
+});
 // <<APPEND>>

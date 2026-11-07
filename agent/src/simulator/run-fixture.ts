@@ -24,6 +24,7 @@ import { createHmac } from "node:crypto";
 import { composeNotifiers, createOwnerNotifier } from "../owner/notifier.js";
 import { seedOwnerMembers } from "../owner/seed.js";
 import { routeInbound, sendDailyDigest } from "../owner/inbound.js";
+import { collectingChaserOutbox, type ChaserMessage } from "../chasers/types.js";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const AGENT_ROOT = path.join(REPO_ROOT, "agent");
@@ -55,6 +56,8 @@ interface Fixture {
    * escalations are also delivered to the owner and manager, and `owner` / `digest` steps are available.
    */
   owners?: { role: "owner" | "manager" | "staff"; phone: string }[];
+  /** Chasers with consent (T19): quotes ask for opt-in and schedule 24h/72h reminders; `tick` steps send them into the collected chaser outbox. */
+  chasers?: boolean;
 }
 
 /**
@@ -87,7 +90,9 @@ export interface RunResult {
   /** One entry per message processed, in order (the top-level fields describe the last). */
   turns: Omit<RunResult, "turns" | "ticks" | "payments" | "ownerTranscript">[];
   /** One entry per `tick` step: what the timer worker did at that clock. */
-  ticks?: { at: string; processed: number; expiredHolds: string[] }[];
+  ticks?: { at: string; processed: number; expiredHolds: string[]; chasersSent: number }[];
+  /** Every chaser the simulated WhatsApp outbox was handed, in order (only when the fixture sets `chasers`). */
+  chasers?: ChaserMessage[];
   /** One entry per `pay` step: what the webhook handler did with the simulated signed paid event. */
   payments?: (WebhookResult | { status: "no_link" })[];
   /** The simulated owner thread (only when the fixture declares `owners`). */
@@ -148,6 +153,8 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
   };
   const payments = fx.payments === "razorpay-sim" ? razorpaySim({ webhookSecret: DEMO_WEBHOOK_SECRET }) : undefined;
   const paid: NonNullable<RunResult["payments"]> = [];
+  const chaserSink: ChaserMessage[] = [];
+  const chasers = fx.chasers ? ({ chasers: true } as const) : {};
   const turns: RunResult["turns"] = [];
   const ticks: NonNullable<RunResult["ticks"]> = [];
   const availability = fx.holds ? nativeAvailability : undefined;
@@ -168,9 +175,9 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
     let res;
     if (c.extracted === undefined) {
       llm ??= createProvider();
-      res = await handleMessage({ pool: opts.pool, kernel, notifier, ownerOutbox, llm, wordReplies: opts.wordReplies ?? process.env.LLM_WORD_REPLIES === "1", ...(availability && { availability }), ...(payments && { payments }) }, input);
+      res = await handleMessage({ pool: opts.pool, kernel, notifier, ownerOutbox, llm, wordReplies: opts.wordReplies ?? process.env.LLM_WORD_REPLIES === "1", ...chasers, ...(availability && { availability }), ...(payments && { payments }) }, input);
     } else {
-      res = await handleEnquiry({ pool: opts.pool, kernel, notifier, ownerOutbox, ...(availability && { availability }), ...(payments && { payments }) }, { ...input, fields: { ...c.extracted, ...opts.overrideFields } });
+      res = await handleEnquiry({ pool: opts.pool, kernel, notifier, ownerOutbox, ...chasers, ...(availability && { availability }), ...(payments && { payments }) }, { ...input, fields: { ...c.extracted, ...opts.overrideFields } });
     }
     turns.push({ reply: res.reply, quote: res.outcome, fields: res.fields as RunResult["fields"], ledgerRow: res.ledgerRow, ...(res.held && { held: true as const }) });
   };
@@ -225,12 +232,12 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
       continue;
     }
     if (m.tick) {
-      const done = await runDueTimers(opts.pool, m.now, { kernel });
-      ticks.push({ at: new Date(m.now).toISOString(), processed: done.processed, expiredHolds: done.expiredHolds });
+      const done = await runDueTimers(opts.pool, m.now, { kernel, ...(fx.chasers && { chaserOutbox: collectingChaserOutbox(chaserSink) }) });
+      ticks.push({ at: new Date(m.now).toISOString(), processed: done.processed, expiredHolds: done.expiredHolds, chasersSent: done.chasersSent.length });
       continue;
     }
     await customerTurn(m);
   }
   const last = turns[turns.length - 1] as Omit<RunResult, "turns" | "ticks" | "payments" | "ownerTranscript">;
-  return { ...last, turns, ...(ticks.length > 0 && { ticks }), ...(paid.length > 0 && { payments: paid }), ...(fx.owners && { ownerTranscript: transcript }) };
+  return { ...last, turns, ...(ticks.length > 0 && { ticks }), ...(paid.length > 0 && { payments: paid }), ...(fx.chasers && { chasers: chaserSink }), ...(fx.owners && { ownerTranscript: transcript }) };
 }

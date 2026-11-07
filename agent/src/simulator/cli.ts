@@ -9,6 +9,7 @@ import { runChat } from "./chat.js";
 import { loadKernel } from "../kernel/index.js";
 import { KillSwitchError, setKillSwitch } from "../killswitch/index.js";
 import { runTwoTenants } from "./two-tenants.js";
+import { collectingChaserOutbox, type ChaserMessage } from "../chasers/types.js";
 
 function flag(argv: string[], name: string): string | undefined {
   const i = argv.indexOf(name);
@@ -27,9 +28,12 @@ async function main(argv: string[]): Promise<number> {
     const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL });
     try {
       await migrate(pool);
-      const r = await runDueTimers(pool, now);
-      console.log(`tick at ${now}: ${r.processed} timer(s) run, ${r.expiredHolds.length} hold(s) expired and their dates released`);
+      const outbox: ChaserMessage[] = [];
+      const r = await runDueTimers(pool, now, { chaserOutbox: collectingChaserOutbox(outbox) });
+      console.log(`tick at ${now}: ${r.processed} timer(s) run, ${r.expiredHolds.length} hold(s) expired and their dates released, ${r.chasersSent.length} chaser(s) sent`);
       for (const id of r.expiredHolds) console.log(`  expired hold ${id}`);
+      // Simulated WhatsApp: nothing leaves this machine. A chaser outside the customer's 24h window is shown as the approved template it would be.
+      for (const m of outbox) console.log(`  chaser ${m.n} to ${m.customerId} [${m.kind === "template" ? `template ${m.template}` : "free text"}] (simulated): ${m.text}`);
       return 0;
     } finally {
       await pool.end();
@@ -115,8 +119,8 @@ async function main(argv: string[]): Promise<number> {
     }
     // A fixture with `holds: true` replays a whole timeline on its own clock, so it runs in a throwaway database
     // (re-running against a database that already holds the date would otherwise change the story).
-    const scratch = JSON.parse(await readFile(resolveFixture(fixture), "utf8")) as { holds?: boolean; owners?: unknown[] };
-    const scratchDb = scratch.holds || scratch.owners ? await createTestDb() : undefined;
+    const scratch = JSON.parse(await readFile(resolveFixture(fixture), "utf8")) as { holds?: boolean; owners?: unknown[]; chasers?: boolean };
+    const scratchDb = scratch.holds || scratch.owners || scratch.chasers ? await createTestDb() : undefined;
     let r;
     try {
       r = await runFixture(fixture, { pool: scratchDb?.pool ?? pool });
@@ -138,7 +142,8 @@ async function main(argv: string[]): Promise<number> {
       console.log(`--- WhatsApp reply ${i + 1}/${r.turns.length} (fictional) ---`);
       console.log(t.reply);
     });
-    for (const k of r.ticks ?? []) console.log(`--- tick at ${k.at}: ${k.processed} timer(s) run, ${k.expiredHolds.length} hold(s) expired ---`);
+    for (const k of r.ticks ?? []) console.log(`--- tick at ${k.at}: ${k.processed} timer(s) run, ${k.expiredHolds.length} hold(s) expired, ${k.chasersSent} chaser(s) sent ---`);
+    for (const m of r.chasers ?? []) console.log(`--- chaser ${m.n} at ${m.at} [${m.kind === "template" ? `template ${m.template}` : "free text"}] (simulated, fictional) ---\n${m.text}`);
     console.log("\n--- stored ledger row (last) ---");
     console.log(JSON.stringify(r.ledgerRow, null, 2));
     return 0;
