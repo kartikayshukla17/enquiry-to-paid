@@ -22,7 +22,7 @@ import { handleOwnerMessage } from "../owner/handle.js";
 import { seedOwnerMembers } from "../owner/seed.js";
 import { nativeAvailability } from "../availability/native.js";
 import { consentStatus, UNSUBSCRIBED_NOTICE } from "./index.js";
-import { appendEntry } from "../ledger/index.js";
+import { appendEntry, verifyLedger } from "../ledger/index.js";
 import { APP_ROLE } from "../tenancy/with-tenant.js";
 import { collectingChaserOutbox, type ChaserMessage } from "./index.js";
 
@@ -509,4 +509,13 @@ describe("tenancy", () => {
     ).rejects.toThrow(/row-level security/);
   });
 });
-// <<APPEND>>
+
+describe("ledger", () => {
+  it("the hash chain still verifies after consent, stop, chase and chaser_sent entries (and the races above)", async () => {
+    const verdict = await verifyLedger(db.pool, kernel, { tenantId: T.id });
+    expect(verdict.ok).toBe(true);
+    const kinds = (await rows("SELECT DISTINCT type FROM ledger_entries WHERE type IN ('consent','stop','chase','chaser_sent') ORDER BY type")).map((r) => r.type);
+    expect(kinds).toEqual(["chase", "chaser_sent", "consent", "stop"]);
+  });
+});
+

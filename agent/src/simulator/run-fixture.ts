@@ -87,10 +87,12 @@ export interface RunResult {
   ledgerRow: LedgerRow;
   /** True when the thread is paused for the owner: the customer got no reply and the owner was shown the message. */
   held?: true;
+  /** The text was a consent answer (T19: a "yes" to the opt-in question, or a stop word). */
+  consent?: "granted" | "revoked";
   /** One entry per message processed, in order (the top-level fields describe the last). */
   turns: Omit<RunResult, "turns" | "ticks" | "payments" | "ownerTranscript">[];
   /** One entry per `tick` step: what the timer worker did at that clock. */
-  ticks?: { at: string; processed: number; expiredHolds: string[]; chasersSent: number }[];
+  ticks?: { at: string; processed: number; expiredHolds: string[]; chasersSent?: number }[];
   /** Every chaser the simulated WhatsApp outbox was handed, in order (only when the fixture sets `chasers`). */
   chasers?: ChaserMessage[];
   /** One entry per `pay` step: what the webhook handler did with the simulated signed paid event. */
@@ -179,7 +181,7 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
     } else {
       res = await handleEnquiry({ pool: opts.pool, kernel, notifier, ownerOutbox, ...chasers, ...(availability && { availability }), ...(payments && { payments }) }, { ...input, fields: { ...c.extracted, ...opts.overrideFields } });
     }
-    turns.push({ reply: res.reply, quote: res.outcome, fields: res.fields as RunResult["fields"], ledgerRow: res.ledgerRow, ...(res.held && { held: true as const }) });
+    turns.push({ reply: res.reply, quote: res.outcome, fields: res.fields as RunResult["fields"], ledgerRow: res.ledgerRow, ...(res.held && { held: true as const }), ...(res.consent && { consent: res.consent }) });
   };
   for (const m of selected) {
     if (m.killSwitch) {
@@ -233,7 +235,7 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
     }
     if (m.tick) {
       const done = await runDueTimers(opts.pool, m.now, { kernel, ...(fx.chasers && { chaserOutbox: collectingChaserOutbox(chaserSink) }) });
-      ticks.push({ at: new Date(m.now).toISOString(), processed: done.processed, expiredHolds: done.expiredHolds, chasersSent: done.chasersSent.length });
+      ticks.push({ at: new Date(m.now).toISOString(), processed: done.processed, expiredHolds: done.expiredHolds, ...(fx.chasers && { chasersSent: done.chasersSent.length }) });
       continue;
     }
     await customerTurn(m);

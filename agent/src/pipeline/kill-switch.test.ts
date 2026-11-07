@@ -182,7 +182,8 @@ describe("structural: no pipeline path reaches kernel quoting while the switch i
     for (const name of names) {
       const r = await runFixture(`fixtures/${name}`, { pool: db.pool, kernel: counting, llm: forbiddenLlm(calls) });
       turns += r.turns.length;
-      for (const t of r.turns) expect(t.quote, name).toMatchObject({ kind: "refusal", reason: "kill_switch" });
+      // A stop word is the one thing honoured while the switch is on (T19): it prices nothing and it is a legal duty. It reaches no kernel and no model.
+      for (const t of r.turns) if (t.consent === undefined) expect(t.quote, name).toMatchObject({ kind: "refusal", reason: "kill_switch" });
     }
     expect(turns).toBeGreaterThan(20);
     expect(evaluateCalls).toBe(0);

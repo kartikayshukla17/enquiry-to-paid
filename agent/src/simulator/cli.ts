@@ -142,7 +142,7 @@ async function main(argv: string[]): Promise<number> {
       console.log(`--- WhatsApp reply ${i + 1}/${r.turns.length} (fictional) ---`);
       console.log(t.reply);
     });
-    for (const k of r.ticks ?? []) console.log(`--- tick at ${k.at}: ${k.processed} timer(s) run, ${k.expiredHolds.length} hold(s) expired, ${k.chasersSent} chaser(s) sent ---`);
+    for (const k of r.ticks ?? []) console.log(`--- tick at ${k.at}: ${k.processed} timer(s) run, ${k.expiredHolds.length} hold(s) expired, ${k.chasersSent ?? 0} chaser(s) sent ---`);
     for (const m of r.chasers ?? []) console.log(`--- chaser ${m.n} at ${m.at} [${m.kind === "template" ? `template ${m.template}` : "free text"}] (simulated, fictional) ---\n${m.text}`);
     console.log("\n--- stored ledger row (last) ---");
     console.log(JSON.stringify(r.ledgerRow, null, 2));

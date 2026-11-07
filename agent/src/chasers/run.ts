@@ -7,6 +7,7 @@
 import type { PoolClient } from "pg";
 import type { KernelBridge } from "../kernel/index.js";
 import { appendEntry } from "../ledger/index.js";
+import { isCollectedState } from "../payments/webhook.js";
 import { readKillSwitch } from "../killswitch/index.js";
 import { CHASER_AFTER_HOURS, MAX_CHASERS, cancelChaser, consentOf, plusHours } from "./consent.js";
 import { SERVICE_WINDOW_HOURS, chaserParams, renderChaser } from "./templates.js";
@@ -37,7 +38,7 @@ export async function runChaserInTxn(
   if (!quote) return cancel("no_quote");
   // Every reason a reminder would now be unwelcome or wrong, read fresh under the lock. The first that holds cancels it for good.
   if ((await readKillSwitch(c, a.tenantId)).on) return cancel("kill_switch");
-  if (th.state === "collected") return cancel("payment_collected");
+  if (isCollectedState(th.state)) return cancel("payment_collected");
   const ownerSpoke =
     th.state === "paused_owner" ||
     (await c.query("SELECT 1 FROM ledger_entries WHERE tenant_id=$1 AND thread_id=$2 AND type='owner_message' AND payload->>'command'='owner_reply' AND tenant_seq > $3 LIMIT 1", [a.tenantId, a.threadId, quote.tenant_seq])).rowCount === 1;
