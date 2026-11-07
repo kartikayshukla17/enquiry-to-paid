@@ -7,6 +7,8 @@
  *   call them | call them R12
  *   why | why R12 | why Q9
  *   digest
+ *   reply R12 <free text>     (T18: send this to the customer as yourself; pauses the agent on that thread)
+ *   handback | handback R12   (T18: give the thread back to the agent)
  *
  * A ref (`R<n>` for a refusal, `Q<n>` for a quote) is optional on the action commands: without one, the command applies
  * to the only enquiry still waiting for the owner.
@@ -17,6 +19,8 @@ export type OwnerReply =
   | { kind: "call_them"; ref?: string }
   | { kind: "why"; ref?: string }
   | { kind: "digest" }
+  | { kind: "reply"; ref: string; text: string }
+  | { kind: "handback"; ref?: string }
   | { kind: "usage"; error: string };
 
 /** Largest price accepted, in major units: 99,999,999 (so minor units stay far inside Number's exact integer range). */
@@ -26,9 +30,13 @@ const QUOTE_RE = new RegExp(String.raw`^quote(?:\s+${REF})?\s+(?:rs\.?\s*|inr\s*
 const DECLINE_RE = new RegExp(String.raw`^decline(?:\s+${REF})?$`, "i");
 const CALL_RE = new RegExp(String.raw`^call\s+them(?:\s+${REF})?$`, "i");
 const WHY_RE = new RegExp(String.raw`^why(?:\s+${REF})?$`, "i");
+const REPLY_RE = new RegExp(String.raw`^reply\s+${REF}\s+(.+)$`, "i");
+const HANDBACK_RE = new RegExp(String.raw`^hand\s?back(?:\s+${REF})?$`, "i");
+/** Longest message the owner can relay in one go; longer is refused, never truncated. */
+export const MAX_REPLY_CHARS = 1000;
 const DIGEST_RE = /^(?:daily\s+)?(?:digest|summary)$/i;
 
-const withRef = <K extends "decline" | "call_them" | "why">(kind: K, ref: string | undefined) => ({ kind, ...(ref && { ref: ref.toUpperCase() }) });
+const withRef = <K extends "decline" | "call_them" | "why" | "handback">(kind: K, ref: string | undefined) => ({ kind, ...(ref && { ref: ref.toUpperCase() }) });
 
 /** Returns undefined when the text is not an owner-reply command at all. */
 export function parseOwnerReply(text: string): OwnerReply | undefined {
@@ -52,6 +60,16 @@ export function parseOwnerReply(text: string): OwnerReply | undefined {
   const w = WHY_RE.exec(t);
   if (w) return withRef("why", w[1]);
   if (/^why\b/i.test(t)) return { kind: "usage", error: "Say it like: why R12 (the ref is in the escalation message)" };
+  const rp = REPLY_RE.exec(t);
+  if (rp) {
+    const text = rp[2] as string;
+    if (text.length > MAX_REPLY_CHARS) return { kind: "usage", error: `That message is longer than ${MAX_REPLY_CHARS} characters. Please send it shorter.` };
+    return { kind: "reply", ref: (rp[1] as string).toUpperCase(), text };
+  }
+  if (/^reply\b/i.test(t)) return { kind: "usage", error: "Say it like: reply R12 <your message to the customer> (the ref is in the escalation message)" };
+  const h = HANDBACK_RE.exec(t);
+  if (h) return withRef("handback", h[1]);
+  if (/^hand\s?back\b/i.test(t)) return { kind: "usage", error: "Say it like: handback (or handback R12)" };
   if (DIGEST_RE.test(t)) return { kind: "digest" };
   return undefined;
 }
