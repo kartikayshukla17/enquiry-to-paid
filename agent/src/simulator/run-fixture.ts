@@ -23,6 +23,7 @@ import { handleWebhook, type WebhookResult } from "../payments/webhook.js";
 import { createHmac } from "node:crypto";
 import { composeNotifiers, createOwnerNotifier } from "../owner/notifier.js";
 import { seedOwnerMembers } from "../owner/seed.js";
+import { routeInbound, sendDailyDigest } from "../owner/inbound.js";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const AGENT_ROOT = path.join(REPO_ROOT, "agent");
@@ -149,6 +150,28 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
   const ticks: NonNullable<RunResult["ticks"]> = [];
   const availability = fx.holds ? nativeAvailability : undefined;
   let llm = opts.llm;
+  const customerTurn = async (c: { text: string; extracted?: Partial<ExtractedFields>; customerRef?: string; now?: string }): Promise<void> => {
+    const customerRef = c.customerRef ?? fx.customerRef;
+    const input = {
+      tenant: fx.tenant,
+      threadId: c.customerRef ? `${fx.tenant.id}:thread:${fx.id}:${c.customerRef}` : `${fx.tenant.id}:thread:${fx.id}`,
+      customerRef,
+      rateCard,
+      now: c.now ?? fx.now,
+      availability: fx.availability,
+      message: c.text,
+    };
+    const base = opts.notifier ?? createLogNotifier();
+    const notifier = fx.owners ? composeNotifiers(base, createOwnerNotifier({ pool: opts.pool, kernel, outbox: ownerOutbox })) : base;
+    let res;
+    if (c.extracted === undefined) {
+      llm ??= createProvider();
+      res = await handleMessage({ pool: opts.pool, kernel, notifier, llm, wordReplies: opts.wordReplies ?? process.env.LLM_WORD_REPLIES === "1", ...(availability && { availability }), ...(payments && { payments }) }, input);
+    } else {
+      res = await handleEnquiry({ pool: opts.pool, kernel, notifier, ...(availability && { availability }), ...(payments && { payments }) }, { ...input, fields: { ...c.extracted, ...opts.overrideFields } });
+    }
+    turns.push({ reply: res.reply, quote: res.outcome, fields: res.fields as RunResult["fields"], ledgerRow: res.ledgerRow });
+  };
   for (const m of selected) {
     if (m.killSwitch) {
       // Tenant scope: flipped by the fixture tenant's seeded owner member. Global scope: by a fixture platform operator.
@@ -183,34 +206,28 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
       paid.push(await handleWebhook({ pool: opts.pool, kernel, payments }, body, headers, m.now));
       continue;
     }
-    if (m.owner !== undefined || m.digest) {
-      continue; // owner steps arrive in the next slice
+    if (m.owner !== undefined) {
+      transcript.push({ dir: "from_owner", from: m.owner, text: m.text, at: new Date(m.now).toISOString() });
+      // Routed by hashed phone: a member goes to the owner channel and never reaches the customer pipeline; anyone else is a customer.
+      const routed = await routeInbound({ pool: opts.pool, kernel }, { tenant: fx.tenant, senderRef: m.owner, text: m.text, now: m.now }, () =>
+        customerTurn({ text: m.text, customerRef: m.owner, now: m.now, extracted: { language: "en", confidenceBps: 9000 } }),
+      );
+      if (routed.channel === "owner") {
+        transcript.push({ dir: "to_owner", kind: "reply", to: m.owner, text: routed.result.reply, at: new Date(m.now).toISOString() });
+        for (const cm of routed.result.customerMessages) transcript.push({ dir: "to_customer", threadId: cm.threadId, text: cm.text, at: new Date(m.now).toISOString() });
+      }
+      continue;
+    }
+    if (m.digest) {
+      await sendDailyDigest({ pool: opts.pool, outbox: ownerOutbox, kernel }, { tenant: fx.tenant, now: m.now });
+      continue;
     }
     if (m.tick) {
       const done = await runDueTimers(opts.pool, m.now, { kernel });
       ticks.push({ at: new Date(m.now).toISOString(), processed: done.processed, expiredHolds: done.expiredHolds });
       continue;
     }
-    const customerRef = m.customerRef ?? fx.customerRef;
-    const input = {
-      tenant: fx.tenant,
-      threadId: m.customerRef ? `${fx.tenant.id}:thread:${fx.id}:${m.customerRef}` : `${fx.tenant.id}:thread:${fx.id}`,
-      customerRef,
-      rateCard,
-      now: m.now ?? fx.now,
-      availability: fx.availability,
-      message: m.text,
-    };
-    const base = opts.notifier ?? createLogNotifier();
-    const notifier = fx.owners ? composeNotifiers(base, createOwnerNotifier({ pool: opts.pool, kernel, outbox: ownerOutbox })) : base;
-    let res;
-    if (m.extracted === undefined) {
-      llm ??= createProvider();
-      res = await handleMessage({ pool: opts.pool, kernel, notifier, llm, wordReplies: opts.wordReplies ?? process.env.LLM_WORD_REPLIES === "1", ...(availability && { availability }), ...(payments && { payments }) }, input);
-    } else {
-      res = await handleEnquiry({ pool: opts.pool, kernel, notifier, ...(availability && { availability }), ...(payments && { payments }) }, { ...input, fields: { ...m.extracted, ...opts.overrideFields } });
-    }
-    turns.push({ reply: res.reply, quote: res.outcome, fields: res.fields as RunResult["fields"], ledgerRow: res.ledgerRow });
+    await customerTurn(m);
   }
   const last = turns[turns.length - 1] as Omit<RunResult, "turns" | "ticks" | "payments" | "ownerTranscript">;
   return { ...last, turns, ...(ticks.length > 0 && { ticks }), ...(paid.length > 0 && { payments: paid }), ...(fx.owners && { ownerTranscript: transcript }) };
