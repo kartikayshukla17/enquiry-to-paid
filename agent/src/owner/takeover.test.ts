@@ -268,6 +268,129 @@ describe("who may take over", () => {
   });
 });
 
+describe("ticket demo, end to end", () => {
+  const provider = razorpaySim({ webhookSecret: TEST_SECRET });
+  for (const how of ["idle", "handback"] as const) {
+    it(`enquiry -> owner message pauses -> follow-up unanswered -> ${how} -> agent answers; the owner-priced job is paid via webhook and the proof says non-billable`, async () => {
+      await runDueTimers(db.pool, at(10_000), { kernel });
+      const thread = `to-${++n}`;
+      const first = await handleMessage({ ...deps(), payments: provider }, { tenant: T, threadId: thread, customerRef: `cust-${thread}`, rateCard: card, now: T0, availability: { blockedDates: [] }, message: "banquet for 120 on 12 Dec" });
+      if (first.outcome.kind !== "quote") throw new Error("expected quote");
+      const ref = await refFor(thread);
+      await owner(OWNER, `reply ${ref} For you I can do 60,000 in total.`, at(1));
+      expect((await customer(thread, "great, can you do 13 Dec?", at(2))).reply).toBe("");
+      if (how === "idle") await runDueTimers(db.pool, at(13), { kernel });
+      else await owner(MANAGER, `handback ${ref}`, at(3));
+      expect(await state(thread)).toBe("quoted");
+      expect((await customer(thread, "price for 13 Dec?", at(14))).reply).toContain("Total");
+      const linkId = (await rows("SELECT provider_link_id FROM payments WHERE thread_id=$1 ORDER BY created_at LIMIT 1", [thread]))[0].provider_link_id as string;
+      const ev = paidEvent({ linkId, tenantId: T.id, amount: first.outcome.total, eventId: `evt_demo_${how}`, paymentId: `pay_demo_${how}` });
+      await handleWebhook({ pool: db.pool, kernel, payments: provider }, ev.body, ev.headers, at(15));
+      const proof = await proofForThread(db.pool, kernel, { tenantId: T.id, threadId: thread });
+      expect(proof).toMatchObject({ billable: "no", reason: "owner_priced" });
+      expect(proof.chain.map((e) => e.summary).join("\n")).toContain("contains a price");
+    });
+  }
+});
+
+const sleep =(ms: number) => new Promise((r) => setTimeout(r, ms));
+
+describe("concurrency (row locks, real races)", () => {
+  beforeEach(async () => {
+    await runDueTimers(db.pool, at(10_000), { kernel });
+  });
+
+  it("the owner and a manager reply at the same moment: both go out, exactly one pause is recorded, one timer", async () => {
+    const { thread, ref } = await quoted();
+    const [a, b] = await Promise.all([owner(OWNER, `reply ${ref} from the owner`, at(0)), owner(MANAGER, `reply ${ref} from the manager`, at(0))]);
+    expect(a.customerMessages).toHaveLength(1);
+    expect(b.customerMessages).toHaveLength(1);
+    expect((await cmds(thread)).filter((c) => c === "pause")).toHaveLength(1);
+    expect((await cmds(thread)).filter((c) => c === "owner_reply")).toHaveLength(2);
+    expect((await rows("SELECT 1 FROM timers WHERE subject_id=$1 AND status='pending'", [thread])).length).toBe(1);
+  });
+
+  it("a handback and the idle timer firing at the same moment resume the thread exactly once", async () => {
+    const { thread, ref } = await quoted();
+    await owner(OWNER, `reply ${ref} hi`, at(0));
+    await Promise.all([owner(OWNER, `handback ${ref}`, at(12)), runDueTimers(db.pool, at(12), { kernel })]);
+    const c = await cmds(thread);
+    expect(c.filter((x) => x === "handback").length + c.filter((x) => x === "idle_resume").length).toBe(1);
+    expect(await state(thread)).toBe("quoted");
+  });
+
+  it("a customer message queued behind a held lock while the owner replies: either order is consistent (answered then paused, or held), never answered after the pause", async () => {
+    const { thread, ref } = await quoted();
+    const quotesBefore = (await ledger(thread, "quote")).length;
+    const lock = await db.pool.connect();
+    await lock.query("BEGIN");
+    await lock.query("SELECT 1 FROM threads WHERE id=$1 FOR UPDATE", [thread]);
+    const c = customer(thread, "can you do the 14th?", at(1));
+    const o = owner(OWNER, `reply ${ref} I will take it from here`, at(1));
+    await sleep(300);
+    await lock.query("COMMIT");
+    lock.release();
+    const [cr] = await Promise.all([c, o]);
+    expect(await state(thread)).toBe("paused_owner");
+    const quotesAfter = (await ledger(thread, "quote")).length;
+    if (cr.held) expect(quotesAfter).toBe(quotesBefore);
+    else {
+      expect(cr.reply).not.toBe("");
+      expect(quotesAfter).toBe(quotesBefore + 1);
+      const order = (await ledger(thread)).map((r) => r.type === "owner_message" ? (r.payload.command as string) : r.type);
+      expect(order.lastIndexOf("quote")).toBeLessThan(order.indexOf("pause"));
+    }
+  });
+
+  it("a customer message whose pause was seen before extraction, but which is handed back before it gets the lock, is answered normally (no lost reply)", async () => {
+    const { thread, ref } = await quoted();
+    await owner(OWNER, `reply ${ref} hi`, at(0));
+    const lock = await db.pool.connect();
+    await lock.query("BEGIN");
+    await lock.query("SELECT 1 FROM threads WHERE id=$1 FOR UPDATE", [thread]);
+    const before = extractCalls;
+    const c = customer(thread, "price please", at(1));
+    await sleep(300); // the customer call has now read "paused" and is waiting for the lock
+    await lock.query("UPDATE threads SET state='quoted', paused_from=NULL WHERE id=$1", [thread]);
+    await lock.query("COMMIT");
+    lock.release();
+    const res = await c;
+    expect(res.held).toBeUndefined();
+    expect(res.reply).toContain("Total");
+    expect(extractCalls).toBe(before + 1);
+  });
+
+  it("lock order: the idle timer waits for the thread BEFORE taking the ledger head, so a busy thread never stalls the tenant's other writes (and can not deadlock with the pipeline)", async () => {
+    const a = await quoted(), b = await quoted();
+    await owner(OWNER, `reply ${a.ref} hi`, at(0));
+    const lock = await db.pool.connect();
+    await lock.query("BEGIN");
+    await lock.query("SELECT 1 FROM threads WHERE id=$1 FOR UPDATE", [a.thread]);
+    const tick = runDueTimers(db.pool, at(12), { kernel });
+    await sleep(300); // the worker has claimed the timer and is parked on thread a
+    const other = await Promise.race([customer(b.thread, "another thread, same tenant", at(12)).then(() => "done"), sleep(3000).then(() => "stalled")]);
+    await lock.query("COMMIT");
+    lock.release();
+    await tick;
+    expect(other).toBe("done");
+    expect(await state(a.thread)).toBe("quoted");
+  });
+
+  it("no deadlocks: customers, owners, handbacks and the timer worker all hammering the same threads for several rounds", async () => {
+    const ts = [await quoted(), await quoted(), await quoted()];
+    for (let round = 0; round < 6; round++) {
+      const jobs: Promise<unknown>[] = [runDueTimers(db.pool, at(round * 5 + 13), { kernel })];
+      for (const t of ts) {
+        jobs.push(customer(t.thread, `msg ${round}`, at(round * 5 + 1)));
+        jobs.push(owner(round % 2 ? OWNER : MANAGER, `reply ${t.ref} round ${round}`, at(round * 5)));
+        jobs.push(owner(OWNER, `handback ${t.ref}`, at(round * 5 + 2)));
+      }
+      await Promise.all(jobs);
+    }
+    for (const t of ts) expect(["paused_owner", "quoted"]).toContain(await state(t.thread));
+  });
+});
+
 describe("12h idle resume (durable timer, injected clock)", () => {
   beforeEach(async () => {
     await runDueTimers(db.pool, at(10_000), { kernel }); // drain timers left by earlier tests so each test sees only its own
