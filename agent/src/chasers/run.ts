@@ -7,6 +7,7 @@
 import type { PoolClient } from "pg";
 import type { KernelBridge } from "../kernel/index.js";
 import { appendEntry } from "../ledger/index.js";
+import { nativeAvailability } from "../availability/native.js";
 import { isCollectedState } from "../payments/webhook.js";
 import { readKillSwitch } from "../killswitch/index.js";
 import { CHASER_AFTER_HOURS, MAX_CHASERS, cancelChaser, consentOf, plusHours } from "./consent.js";
@@ -45,9 +46,18 @@ export async function runChaserInTxn(
   if (ownerSpoke) return cancel("owner_takeover");
   if ((await c.query("SELECT 1 FROM ledger_entries WHERE tenant_id=$1 AND thread_id=$2 AND type='enquiry' AND tenant_seq > $3 LIMIT 1", [a.tenantId, a.threadId, quote.tenant_seq])).rowCount === 1) return cancel("customer_reply");
   if (th.state !== "quoted") return cancel("not_quoted");
-  const hold = (await c.query<{ status: string; expires_at: Date }>("SELECT status, expires_at FROM holds WHERE tenant_id=$1 AND thread_id=$2 ORDER BY created_at DESC LIMIT 1", [a.tenantId, a.threadId])).rows[0];
-  if (hold && (hold.status !== "active" || hold.expires_at.getTime() <= Date.parse(a.now))) return cancel("hold_expired");
-  const validUntil = (quote.payload as { validUntil?: string }).validUntil;
+  // A lapsed hold is not a reason to stay silent (the text never claims one, and a 12h hold would otherwise kill chaser 1, a 48h hold chaser 2).
+  // What matters is whether the quoted date can still be had, read now under the thread lock: cancel only if someone else has taken it.
+  const hold = (await c.query<{ resource_id: string; start_date: string; end_date: string; status: string; expires_at: Date }>(
+    "SELECT resource_id, start_date::text, end_date::text, status, expires_at FROM holds WHERE tenant_id=$1 AND thread_id=$2 ORDER BY created_at DESC LIMIT 1",
+    [a.tenantId, a.threadId],
+  )).rows[0];
+  const holdLive = hold && hold.status === "active" && hold.expires_at.getTime() > Date.parse(a.now);
+  if (hold && hold.status !== "confirmed" && !holdLive) {
+    const taken = await nativeAvailability.blockedDates(c, { tenantId: a.tenantId, resourceId: hold.resource_id, from: hold.start_date, to: hold.end_date, now: a.now, ignoreThreadId: a.threadId });
+    if (taken.length > 0) return cancel("date_unavailable");
+  }
+  const validUntil = quote.payload.validUntil;
   if (validUntil && Date.parse(validUntil) <= Date.parse(a.now)) return cancel("quote_expired");
   const cs = await consentOf(c, a.tenantId, th.customer_id);
   if (cs.status !== "granted") return cancel(cs.status === "revoked" ? "consent_revoked" : "no_consent");

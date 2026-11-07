@@ -269,13 +269,32 @@ describe("cancellation: checked again under the lock when the chaser is due", ()
     expect(await cancelReasons(th)).toEqual(["quote_expired"]);
   });
 
-  it("a hold that expired: no chaser", async () => {
-    const { th } = await optedIn(1, { card: holdCard, fields: { date: "2027-03-01" }, extra: { availability: nativeAvailability } });
+  const native = { availability: nativeAvailability };
+  it("a lapsed hold does not by itself cancel: a 12h hold gone at 13h, the date still free, chaser 1 goes at 25h", async () => {
+    const { th } = await optedIn(1, { card: holdCard, fields: { date: "2027-03-01" }, extra: native });
     await tick(at(13)); // the hold-expiry timer releases the date
     expect((await rows("SELECT status FROM holds WHERE thread_id=$1", [th]))[0].status).toBe("expired");
-    await tick(at(25));
-    expect(sentTo(th)).toEqual([]);
-    expect(await cancelReasons(th)).toEqual(["hold_expired"]);
+    expect(await sentBy(th, at(25))).toEqual([{ threadId: th, n: 1 }]);
+    expect(await cancelReasons(th)).toEqual([]);
+  });
+
+  it("native 48h hold lapses at 48h, the date is still free: chaser 1 at 25h and chaser 2 at 73h both go", async () => {
+    const { th } = await optedIn(1, { fields: { date: "2027-04-10" }, extra: native });
+    expect(await sentBy(th, at(25))).toEqual([{ threadId: th, n: 1 }]);
+    await tick(at(49));
+    expect((await rows("SELECT status FROM holds WHERE thread_id=$1", [th]))[0].status).toBe("expired");
+    expect(await sentBy(th, at(73))).toEqual([{ threadId: th, n: 2 }]);
+    expect(await cancelReasons(th)).toEqual([]);
+  });
+
+  it("the hold lapsed and someone else took the date: chaser 2 is cancelled as date_unavailable, and no chaser text claims a hold", async () => {
+    const { th } = await optedIn(1, { fields: { date: "2027-04-11" }, extra: native });
+    expect(await sentBy(th, at(25))).toEqual([{ threadId: th, n: 1 }]);
+    await tick(at(49));
+    await quote(thread(), at(50), { fields: { date: "2027-04-11" }, extra: native }); // another customer's quote holds the date now
+    expect(await sentBy(th, at(73))).toEqual([]);
+    expect(await cancelReasons(th)).toEqual(["date_unavailable"]);
+    for (const m of sentTo(th)) expect(m.text).not.toMatch(/hold|held|reserve/i);
   });
 });
 
