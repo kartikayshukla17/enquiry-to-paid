@@ -6,6 +6,7 @@ import type { Notifier } from "../escalation/index.js";
 import type { LlmProvider } from "../llm/types.js";
 import { makeReplyWorder } from "../llm/word-reply.js";
 import type { PiiKeys } from "../security/pii.js";
+import type { PaymentProvider } from "../payments/types.js";
 import { readKillSwitch } from "../killswitch/index.js";
 import { withTenant } from "../tenancy/with-tenant.js";
 import { handleEnquiry, type EnquiryInput, type EnquiryResult, type Provenance } from "./handle-enquiry.js";
@@ -21,6 +22,8 @@ export interface MessageDeps {
   lowConfidenceBps?: number;
   /** Where dates are checked and held (native Postgres in production). Absent: only the static `availability` input applies. */
   availability?: AvailabilityProvider;
+  /** Payment provider (simulated in v0): when set, a quote reply carries a code-written payment link. */
+  payments?: PaymentProvider;
 }
 
 const UNKNOWN: Omit<Provenance, "costMinor"> = { modelId: "unknown", provider: "unknown", region: "unknown" };
@@ -42,6 +45,7 @@ export async function handleMessage(
     notifier: deps.notifier,
     ...(deps.pii && { pii: deps.pii }),
     ...(deps.availability && { availability: deps.availability }),
+    ...(deps.payments && { payments: deps.payments }),
     ...(deps.lowConfidenceBps !== undefined && { lowConfidenceBps: deps.lowConfidenceBps }),
     ...(deps.wordReplies && { worder: makeReplyWorder(deps.llm) }),
   };

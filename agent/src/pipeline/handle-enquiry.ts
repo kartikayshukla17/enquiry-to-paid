@@ -13,6 +13,8 @@ import { EXPIRED_QUOTE_PREFIX, disclosureReply, formatInstantInZone, holdingRepl
 import { encryptPii, phoneHash, piiKeysFromEnv, type PiiKeys } from "../security/pii.js";
 import { withTenant } from "../tenancy/with-tenant.js";
 import { readKillSwitch, type KillScope } from "../killswitch/index.js";
+import { issuePaymentLinkInTxn } from "../payments/issue.js";
+import type { PaymentProvider } from "../payments/types.js";
 
 export interface EnquiryInput {
   tenant: { id: string; name: string };
@@ -78,7 +80,7 @@ const MAX_WORDING_ATTEMPTS = 3;
  * Free text (`message`) is stored in the ledger only; it never reaches the kernel.
  */
 export async function handleEnquiry(
-  deps: { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider },
+  deps: { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider; payments?: PaymentProvider },
   e: EnquiryInput,
 ): Promise<EnquiryResult> {
   const pii = deps.pii ?? piiKeysFromEnv();
@@ -122,7 +124,7 @@ interface Decision {
   clarifying: boolean;
 }
 
-type Deps = { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider };
+type Deps = { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider; payments?: PaymentProvider };
 
 async function decide(
   deps: Deps,
@@ -297,6 +299,14 @@ async function decide(
       ...outcomeProv,
     });
     for (const h of holdEvents) await appendEntry(client, deps.kernel, { ...base, threadId: h.threadId, type: "hold", payload: h.payload });
+    // Payment link: code-written, appended after any model wording, for exactly the kernel total. Never while the kill switch
+    // is on (`killed` is already false on this path, and issuePaymentLinkInTxn re-reads the flag itself).
+    if (outcome.kind === "quote" && deps.payments && !killed) {
+      const issued = await issuePaymentLinkInTxn(client, deps.kernel, deps.payments, {
+        tenantId: e.tenant.id, threadId: e.threadId, quote: { seq: ledgerRow.seq, amountMinor: outcome.total, currency: outcome.currency }, now: e.now,
+      });
+      if (issued.ok) reply = `${reply}\n\n${issued.link.replyText}`;
+    }
     // A clarifying question keeps the thread open; the follow-up message completes it. A gated read leaves stored fields alone.
     const state = outcome.kind === "disclosure" ? (stored?.state ?? "open") : outcome.kind === "quote" ? "quoted" : clarifying ? "open" : "refused";
     if (gated || killed) await client.query("UPDATE threads SET state = $2 WHERE id = $1", [e.threadId, state]);
