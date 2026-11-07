@@ -16,7 +16,7 @@ export function normalizeText(text: string): string[] {
 }
 
 /** Whole-message "yes" to the opt-in question: English, Hinglish, Devanagari. Nothing longer counts as an answer. */
-const YES = ["yes", "y", "yep", "yeah", "haan", "han", "haa", "ha", "hanji", "haanji", "ji", "ji haan", "ji han", "हाँ", "हां", "हा", "जी", "जी हाँ", "जी हां", "हाँ जी", "हां जी"].map((p) => normalizeText(p).join(" "));
+const YES = ["yes", "y", "yep", "yeah", "haan", "han", "haa", "hanji", "haanji", "ji haan", "ji han", "हाँ", "हां", "हा", "जी हाँ", "जी हां", "हाँ जी", "हां जी"].map((p) => normalizeText(p).join(" "));
 
 export type ConsentWord = "yes" | "stop";
 
@@ -39,13 +39,34 @@ const FILLERS = new Set(
 );
 const MAX_WORDS_AFTER_STOP_PHRASE = 3;
 
+/**
+ * Contains-anywhere pass: a missed stop is the dangerous side, so unambiguous stems count wherever they sit in the message.
+ * Stems that are not themselves negative ("unsubscribe", "stop sending") are voided by a negation in the three words before
+ * them ("I will not unsubscribe", "don't stop sending the quote"). Stems that are a request ("don't message me") need no guard.
+ */
+const STEMS_NEEDING_GUARD = words([
+  "unsubscribe", "opt out", "optout", "stopall",
+  ...["sending", "messaging", "texting", "reminders", "bothering", "contacting"].map((w) => `stop ${w}`),
+]);
+const STEMS_UNGUARDED = words([
+  "no more messages", "no more message", "i said stop", "bhejna band", "mat bhejo", "बंद करो", "बन्द करो", "मत भेजो", "भेजना बंद", "भेजना बन्द",
+  ...["don t", "dont", "do not", "never"].flatMap((neg) => ["message", "contact", "text"].map((v) => `${neg} ${v} me`)),
+]);
+const NEGATIONS = new Set(["not", "never", "dont", "don", "doesn", "won", "wont", "cant", "didn", "without"]);
+const containsAt = (tokens: string[], phrase: string[], from: number) => phrase.every((w, i) => tokens[from + i] === w);
+const containsAnywhere = (tokens: string[], phrase: string[]) => tokens.some((_, i) => containsAt(tokens, phrase, i));
+const containsUnguarded = (tokens: string[], phrase: string[]) =>
+  tokens.some((_, i) => containsAt(tokens, phrase, i) && !tokens.slice(Math.max(0, i - 3), i).some((t) => NEGATIONS.has(t)));
+
 const startsWith = (tokens: string[], phrase: string[]) => phrase.length > 0 && phrase.every((w, i) => tokens[i] === w);
 
 function isStopRequest(text: string): boolean {
   let tokens = normalizeText(text);
   while (tokens.length > 0 && FILLERS.has(tokens[0]!) && tokens.length > 1) tokens = tokens.slice(1);
   if (STOP_WHOLE_MESSAGE_ONLY.some((p) => tokens.length === p.length && startsWith(tokens, p))) return true;
-  return STOP_PHRASES.some((p) => startsWith(tokens, p) && tokens.length - p.length <= MAX_WORDS_AFTER_STOP_PHRASE);
+  if (STOP_PHRASES.some((p) => startsWith(tokens, p) && tokens.length - p.length <= MAX_WORDS_AFTER_STOP_PHRASE)) return true;
+  if (tokens.length === 1 && tokens[0] === "quit") return true;
+  return STEMS_UNGUARDED.some((p) => containsAnywhere(tokens, p)) || STEMS_NEEDING_GUARD.some((p) => containsUnguarded(tokens, p));
 }
 
 export function classifyCustomerText(text: string): ConsentWord | undefined {

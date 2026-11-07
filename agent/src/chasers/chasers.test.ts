@@ -292,6 +292,13 @@ const STOP_WORDS: [string, string][] = [
   ["hinglish", "mat bhejo"], ["hinglish", "Mat bhejo please"], ["hinglish", "MAT BHEJO!!"], ["hinglish", "messages mat bhejo"], ["hinglish", "mat bhejna"], ["hinglish", "bas karo"],
   // Devanagari
   ["devanagari", "बंद करो"], ["devanagari", "बंद करो।"], ["devanagari", "बंद करो!"], ["devanagari", "बन्द करो"], ["devanagari", "बंद कर दो"], ["devanagari", "कृपया बंद करो"], ["devanagari", "ये मैसेज बंद करो"],
+  // Contains-anywhere stems (a missed stop is the dangerous side)
+  ["english", "please unsubscribe me from this"], ["english", "I want to unsubscribe from these messages"], ["english", "How do I OPT OUT of this?"], ["english", "STOPALL"], ["english", "QUIT"], ["english", "Quit!"],
+  ["english", "stop sending me these reminders"], ["english", "Stop messaging me, thanks"], ["english", "stop texting me"], ["english", "stop bothering me, I booked elsewhere"], ["english", "please stop contacting me"],
+  ["english", "don't message me again"], ["english", "Don\u2019t contact me"], ["english", "Do not contact me."], ["english", "dont text me"], ["english", "never message me again"], ["english", "please do not contact me"],
+  ["english", "No more messages"], ["english", "no more messages!!"], ["english", "I said stop"], ["english", "I SAID STOP!!!"], ["english", "i said stop already, why do you keep sending"],
+  ["hinglish", "mujhe message mat bhejo"], ["hinglish", "Mujhe messages mat bhejo!"], ["hinglish", "messages bhejna band karo"], ["hinglish", "ab bhejna band kijiye"], ["hinglish", "bhejna band"], ["hinglish", "aap mujhe baar baar mat bhejo"],
+  ["devanagari", "मुझे मैसेज भेजना बंद करो"], ["devanagari", "ये सब बंद करो अब"], ["devanagari", "कृपया मुझे बार बार मत भेजो"],
   ["devanagari", "रुको"], ["devanagari", "रुको!"], ["devanagari", "रुको।"], ["devanagari", "मत भेजो"], ["devanagari", "मत भेजो।"], ["devanagari", "मैसेज मत भेजो"], ["devanagari", "मत भेजना"], ["devanagari", "बस करो"],
 ];
 /** Messages that mention stopping but are conversation about the quote, not a request to be unsubscribed. */
@@ -299,6 +306,7 @@ const NOT_STOP = [
   "don't stop now", "please don't stop the quote", "can you stop by tomorrow to discuss the 12th", "I will not unsubscribe, send the quote again",
   "Stop. Can we do the 20th instead, with 200 guests?", "stopover hotel for the guests?", "ruko main date check karta hoon", "ruko, kal baat karte hain", "रुको मैं तारीख देखता हूँ",
   "band karo mat, pehle rate batao please", "yes", "ok thanks",
+  "do not stop sending the quote", "never stop messaging me with offers", "mat roko", "I did not unsubscribe, why was I removed", "please don't opt out the team",
 ];
 
 describe("stop words", () => {
