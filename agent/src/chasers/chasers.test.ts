@@ -375,6 +375,8 @@ const STOP_WORDS: [string, string][] = [
   ["english", "No more messages"], ["english", "no more messages!!"], ["english", "I said stop"], ["english", "I SAID STOP!!!"], ["english", "i said stop already, why do you keep sending"],
   ["hinglish", "mujhe message mat bhejo"], ["hinglish", "Mujhe messages mat bhejo!"], ["hinglish", "messages bhejna band karo"], ["hinglish", "ab bhejna band kijiye"], ["hinglish", "bhejna band"], ["hinglish", "aap mujhe baar baar mat bhejo"],
   ["devanagari", "मुझे मैसेज भेजना बंद करो"], ["devanagari", "ये सब बंद करो अब"], ["devanagari", "कृपया मुझे बार बार मत भेजो"],
+  ["english", "Not interested, stop messaging me"], ["english", "Not interested. Unsubscribe me"], ["english", "I don't want this, stop sending"], ["english", "I did not ask for this, stop sending"],
+  ["english", "I don't want this\nstop sending"],
   ["devanagari", "रुको"], ["devanagari", "रुको!"], ["devanagari", "रुको।"], ["devanagari", "मत भेजो"], ["devanagari", "मत भेजो।"], ["devanagari", "मैसेज मत भेजो"], ["devanagari", "मत भेजना"], ["devanagari", "बस करो"],
 ];
 /** Messages that mention stopping but are conversation about the quote, not a request to be unsubscribed. */
@@ -382,6 +384,7 @@ const NOT_STOP = [
   "don't stop now", "please don't stop the quote", "can you stop by tomorrow to discuss the 12th", "I will not unsubscribe, send the quote again",
   "Stop. Can we do the 20th instead, with 200 guests?", "stopover hotel for the guests?", "ruko main date check karta hoon", "ruko, kal baat karte hain", "रुको मैं तारीख देखता हूँ",
   "band karo mat, pehle rate batao please", "yes", "ok thanks",
+  "don't stop messaging", "do not stop sending", "please don't stop now", "please don't stop messaging me",
   "do not stop sending the quote", "never stop messaging me with offers", "mat roko", "I did not unsubscribe, why was I removed", "please don't opt out the team",
 ];
 
@@ -425,6 +428,16 @@ describe("no raw phone in the immutable ledger", () => {
       expect(JSON.stringify(e.payload)).not.toContain(ref(th));
       expect(e.payload.customerId).toBe(custKey(th));
     }
+  });
+});
+
+describe("digits in a stop message are not kept in the immutable ledger", () => {
+  it("long digit runs (any script, spaced or not) are redacted in consent and stop payloads; words are kept", async () => {
+    const { th } = await optedIn(1);
+    await say(th, "stop messaging 98765 43210 or ३४५६७८९ or 1234567 (fictional)", at(2));
+    const entries = [...(await ledger(th, "consent")), ...(await ledger(th, "stop"))].map((e) => JSON.stringify(e.payload)).join("\n");
+    for (const digits of ["98765", "43210", "३४५", "1234567"]) expect(entries).not.toContain(digits);
+    expect((await ledger(th, "stop"))[0].payload.text).toContain("stop messaging");
   });
 });
 

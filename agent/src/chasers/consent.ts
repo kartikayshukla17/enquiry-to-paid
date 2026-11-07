@@ -99,6 +99,9 @@ export interface ConsentReply {
 const NO_FIELDS = { language: "unknown", confidenceBps: 0 } as ExtractedFields;
 const consentOutcome = (gap: string): TurnOutcome => ({ kind: "refusal", reason: "out_of_policy", ruleGap: gap });
 
+/** The ledger is immutable: digit runs of 6+ (any Unicode digits, single space/dash/dot between digits allowed) are phone-number-like and are never stored. */
+export const redactDigits = (text: string): string => text.replace(/\p{Nd}(?:[\s.-]?\p{Nd}){5,}/gu, "[digits]");
+
 /**
  * A customer text that is a consent answer, handled before any extraction (no model sees it). Returns undefined when the text is
  * not one, and the normal pipeline takes it. A "yes" counts only as the answer to a pending opt-in question on the same thread.
@@ -132,7 +135,7 @@ export async function handleConsentMessage(
       ).rows[0];
       if (lastOutcome?.type !== "quote") return undefined;
       const ledgerRow = await appendConsent(c, deps.kernel, {
-        tenantId: e.tenant.id, threadId: e.threadId, customerId: customerKey, action: "granted", source: "whatsapp_optin_reply", at: e.now, extra: { requestSeq: cs.seq, text: e.message },
+        tenantId: e.tenant.id, threadId: e.threadId, customerId: customerKey, action: "granted", source: "whatsapp_optin_reply", at: e.now, extra: { requestSeq: cs.seq, text: redactDigits(e.message) },
       });
       // The clock for the reminders restarts from this answer when it came after the quote was sent.
       if (th.state === "quoted") await scheduleChaser(c, e.tenant.id, e.threadId, e.now);
@@ -141,9 +144,9 @@ export async function handleConsentMessage(
     // A stop word is honoured whatever else is going on: kill switch, owner takeover, a settled thread. It prices nothing.
     const threadId = th ? e.threadId : null;
     const again = cs.status === "revoked";
-    if (!again) await appendConsent(c, deps.kernel, { tenantId: e.tenant.id, threadId, customerId: customerKey, action: "revoked", source: "stop_word", at: e.now, extra: { text: e.message } });
+    if (!again) await appendConsent(c, deps.kernel, { tenantId: e.tenant.id, threadId, customerId: customerKey, action: "revoked", source: "stop_word", at: e.now, extra: { text: redactDigits(e.message) } });
     const ledgerRow = await appendEntry(c, deps.kernel, {
-      tenantId: e.tenant.id, threadId, at: e.now, type: "stop", payload: { customerId: customerKey, text: e.message, confirmed: !again },
+      tenantId: e.tenant.id, threadId, at: e.now, type: "stop", payload: { customerId: customerKey, text: redactDigits(e.message), confirmed: !again },
     });
     // Every pending reminder for this customer, on any of their threads, is cancelled now (and would be again at send time).
     for (const t of new Set([...timers, ...(th ? [e.threadId] : [])])) await cancelChaser(c, deps.kernel, { tenantId: e.tenant.id, threadId: t, reason: "stop_word", at: e.now });

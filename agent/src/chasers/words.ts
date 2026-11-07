@@ -41,8 +41,8 @@ const MAX_WORDS_AFTER_STOP_PHRASE = 3;
 
 /**
  * Contains-anywhere pass: a missed stop is the dangerous side, so unambiguous stems count wherever they sit in the message.
- * Stems that are not themselves negative ("unsubscribe", "stop sending") are voided by a negation in the three words before
- * them ("I will not unsubscribe", "don't stop sending the quote"). Stems that are a request ("don't message me") need no guard.
+ * Stems that are not themselves negative ("unsubscribe", "stop sending") are voided by a negation in the one or two words directly before
+ * them, within the same clause ("I will not unsubscribe", "don't stop sending the quote"). Stems that are a request ("don't message me") need no guard.
  */
 const STEMS_NEEDING_GUARD = words([
   "unsubscribe", "opt out", "optout", "stopall",
@@ -55,8 +55,15 @@ const STEMS_UNGUARDED = words([
 const NEGATIONS = new Set(["not", "never", "dont", "don", "doesn", "won", "wont", "cant", "didn", "without"]);
 const containsAt = (tokens: string[], phrase: string[], from: number) => phrase.every((w, i) => tokens[from + i] === w);
 const containsAnywhere = (tokens: string[], phrase: string[]) => tokens.some((_, i) => containsAt(tokens, phrase, i));
+/** A guarded stem is voided only by a negation right before it (one or two tokens: "don't stop sending", "do not stop sending"). */
+const NEGATION_WINDOW = 2;
 const containsUnguarded = (tokens: string[], phrase: string[]) =>
-  tokens.some((_, i) => containsAt(tokens, phrase, i) && !tokens.slice(Math.max(0, i - 3), i).some((t) => NEGATIONS.has(t)));
+  tokens.some((_, i) => containsAt(tokens, phrase, i) && !tokens.slice(Math.max(0, i - NEGATION_WINDOW), i).some((t) => NEGATIONS.has(t)));
+
+/** Clauses are cut on punctuation and line breaks BEFORE punctuation is stripped, so a negation never reaches across them ("Not interested. Unsubscribe me"). */
+const CLAUSE_BREAK = /[.,;:!?\n\r\u2026\u0964\u0965|()[\]{}"\u201C\u201D]+/u;
+const clausesOf = (text: string): string[][] =>
+  text.normalize("NFKC").split(CLAUSE_BREAK).map(normalizeText).filter((t) => t.length > 0);
 
 const startsWith = (tokens: string[], phrase: string[]) => phrase.length > 0 && phrase.every((w, i) => tokens[i] === w);
 
@@ -66,7 +73,7 @@ function isStopRequest(text: string): boolean {
   if (STOP_WHOLE_MESSAGE_ONLY.some((p) => tokens.length === p.length && startsWith(tokens, p))) return true;
   if (STOP_PHRASES.some((p) => startsWith(tokens, p) && tokens.length - p.length <= MAX_WORDS_AFTER_STOP_PHRASE)) return true;
   if (tokens.length === 1 && tokens[0] === "quit") return true;
-  return STEMS_UNGUARDED.some((p) => containsAnywhere(tokens, p)) || STEMS_NEEDING_GUARD.some((p) => containsUnguarded(tokens, p));
+  return clausesOf(text).some((clause) => STEMS_UNGUARDED.some((p) => containsAnywhere(clause, p)) || STEMS_NEEDING_GUARD.some((p) => containsUnguarded(clause, p)));
 }
 
 export function classifyCustomerText(text: string): ConsentWord | undefined {
