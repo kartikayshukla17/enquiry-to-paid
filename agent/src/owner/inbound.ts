@@ -4,7 +4,7 @@ import { appendEntry } from "../ledger/index.js";
 import { piiKeysFromEnv, type PiiKeys } from "../security/pii.js";
 import { withTenant } from "../tenancy/with-tenant.js";
 import { digestInTxn } from "./digest.js";
-import { handleOwnerMessage, type OwnerMessageInput, type OwnerMessageResult } from "./handle.js";
+import { ensureOpsThread, handleOwnerMessage, type OwnerMessageInput, type OwnerMessageResult } from "./handle.js";
 import { findMemberByPhone, pushRecipients } from "./members.js";
 import type { OwnerOutbox } from "./types.js";
 
@@ -26,18 +26,17 @@ export async function routeInbound<C>(
 
 /** The daily push: the digest for the 24 hours up to `now`, sent to every owner and manager, and recorded on the ledger. */
 export async function sendDailyDigest(
-  deps: { pool: Pool; outbox: OwnerOutbox; kernel?: KernelBridge },
+  deps: { pool: Pool; outbox: OwnerOutbox; kernel?: KernelBridge; pii?: PiiKeys },
   input: { tenant: { id: string; name: string }; now: string },
 ): Promise<{ text: string; sentTo: string[] }> {
   const kernel = deps.kernel ?? (await loadKernel());
+  const pii = deps.pii ?? piiKeysFromEnv();
   const { tenant, now } = input;
   const { text, to } = await withTenant(deps.pool, tenant.id, async (c) => {
     const d = await digestInTxn(c, tenant, now);
     const recipients = await pushRecipients(c, tenant.id);
-    const thread = `${tenant.id}:thread:ops`;
-    if ((await c.query("SELECT 1 FROM threads WHERE id=$1", [thread])).rowCount) {
-      await appendEntry(c, kernel, { tenantId: tenant.id, threadId: thread, at: now, type: "owner_message", payload: { command: "digest_sent", counts: d.counts, to: recipients.map((m) => m.id) } });
-    }
+    const thread = await ensureOpsThread(c, tenant, pii);
+    await appendEntry(c, kernel, { tenantId: tenant.id, threadId: thread, at: now, type: "owner_message", payload: { command: "digest_sent", counts: d.counts, to: recipients.map((m) => m.id) } });
     return { text: d.text, to: recipients };
   });
   for (const m of to) await deps.outbox.send({ tenantId: tenant.id, toMemberId: m.id, role: m.role, kind: "digest", text, at: now });

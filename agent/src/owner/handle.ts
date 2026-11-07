@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from "pg";
 import { handleOwnerCommand, parseOwnerCommand } from "../availability/commands.js";
+import { readKillSwitch } from "../killswitch/index.js";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import { appendEntry, type LedgerRow } from "../ledger/index.js";
 import { formatMoney } from "../pipeline/reply.js";
@@ -61,15 +62,15 @@ export async function handleOwnerMessage(deps: { pool: Pool; kernel?: KernelBrid
     if (cmd.kind === "usage") return say(cmd.error, { command: "usage", error: cmd.error });
     if (cmd.kind === "digest") return say((await digestInTxn(c, tenant, now)).text, { command: "digest" });
     if (cmd.kind === "why") return say(await explain(c, tenant.id, cmd.ref), { command: "why", ...(cmd.ref && { ref: cmd.ref }) });
-    if (!WRITE_ROLES.has(member.role)) return say("Sorry, only the owner or a manager can do that. You can ask me for the digest or say why R12.", { command: cmd.kind, denied: true, role: member.role });
+    if (!WRITE_ROLES.has(member.role)) return say("Sorry, only the owner or a manager can do that. You can ask me for the digest or say why with a ref from an escalation message.", { command: cmd.kind, denied: true, role: member.role });
 
     const picked = await pick(c, tenant.id, cmd.ref);
     if (!picked.ok) return say(picked.reply, { command: cmd.kind, rejected: picked.code, ...(cmd.ref && { ref: cmd.ref }) });
-    return act(c, kernel, { tenant, member, now, text: input.text.trim() }, cmd, picked.item);
+    return act(c, kernel, { tenant, member, now, text: input.text.trim(), opsThreadId: threadId }, cmd, picked.item);
   });
 }
 
-async function ensureOpsThread(c: PoolClient, tenant: { id: string; name: string }, pii: PiiKeys): Promise<string> {
+export async function ensureOpsThread(c: PoolClient, tenant: { id: string; name: string }, pii: PiiKeys): Promise<string> {
   await c.query("INSERT INTO tenants (id, name) VALUES ($1,$2) ON CONFLICT (id) DO NOTHING", [tenant.id, tenant.name]);
   const customer = `${tenant.id}:cust:ops`;
   const threadId = `${tenant.id}:thread:ops`;
@@ -109,7 +110,7 @@ async function cardCurrency(c: PoolClient, tenantId: string): Promise<string> {
 async function act(
   c: PoolClient,
   kernel: KernelBridge,
-  ctx: { tenant: { id: string; name: string }; member: Member; now: string; text: string },
+  ctx: { tenant: { id: string; name: string }; member: Member; now: string; text: string; opsThreadId: string },
   cmd: Exclude<ReturnType<typeof parseOwnerReply>, undefined | { kind: "usage" } | { kind: "digest" } | { kind: "why" }>,
   item: OpenRefusal,
 ): Promise<OwnerMessageResult> {
@@ -118,7 +119,19 @@ async function act(
   const base = { tenantId: tenant.id, threadId: item.threadId, at: now };
   const common = { memberId: member.id, role: member.role, text, ref, refusalTenantSeq: item.tenantSeq, refusalSeq: item.seq };
 
+  // Serialise on the thread so two simultaneous replies cannot both act on one refusal (pick() read before any lock).
+  const state = (await c.query<{ state: string }>("SELECT state FROM threads WHERE id=$1 FOR UPDATE", [item.threadId])).rows[0]?.state;
+  if (state !== "refused") {
+    const ledgerRow = await appendEntry(c, kernel, { ...base, threadId: ctx.opsThreadId, type: "owner_message", payload: { ...common, command: cmd.kind, rejected: "not_waiting" } });
+    return { reply: `${ref} is not waiting for you any more (already answered, or the customer wrote again). Say "digest" to see what is open.`, customerMessages: [], ledgerRow };
+  }
+
   if (cmd.kind === "quote") {
+    const ks = await readKillSwitch(c, tenant.id);
+    if (ks.on) {
+      const ledgerRow = await appendEntry(c, kernel, { ...base, threadId: ctx.opsThreadId, type: "owner_message", payload: { ...common, command: "quote", rejected: "kill_switch", scope: ks.scope } });
+      return { reply: "Kill switch is on; turn it off to send a price", customerMessages: [], ledgerRow };
+    }
     const currency = await cardCurrency(c, tenant.id);
     const customerText = ownerQuoteMessage(tenant.name, cmd.amountMinor, currency);
     const ledgerRow = await appendEntry(c, kernel, {

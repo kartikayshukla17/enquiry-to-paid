@@ -51,7 +51,7 @@ describe("the owner demo, driven through the simulator (fixtures/owner-01.json)"
   });
 
   it("staff cannot set a price: told no, nothing sent to the customer, nothing priced, denial logged", async () => {
-    expect(replies()[1]!.text).toBe("Sorry, only the owner or a manager can do that. You can ask me for the digest or say why R12.");
+    expect(replies()[1]!.text).toBe("Sorry, only the owner or a manager can do that. You can ask me for the digest or say why with a ref from an escalation message.");
     const denied = await ledger("SELECT payload FROM ledger_entries WHERE tenant_id=$1 AND type='owner_message' AND payload->>'denied'='true'");
     expect(denied).toHaveLength(1);
     expect(denied[0].payload).toMatchObject({ command: "quote", role: "staff", text: "quote Rs 85,000" });
