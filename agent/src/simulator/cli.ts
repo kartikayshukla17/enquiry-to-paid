@@ -6,6 +6,8 @@ import { migrate } from "../ledger/migrate.js";
 import { randomBytes } from "node:crypto";
 import { resolveFixture, runFixture } from "./run-fixture.js";
 import { runChat } from "./chat.js";
+import { loadKernel } from "../kernel/index.js";
+import { KillSwitchError, setKillSwitch } from "../killswitch/index.js";
 import { runTwoTenants } from "./two-tenants.js";
 
 function flag(argv: string[], name: string): string | undefined {
@@ -29,6 +31,35 @@ async function main(argv: string[]): Promise<number> {
       console.log(`tick at ${now}: ${r.processed} timer(s) run, ${r.expiredHolds.length} hold(s) expired and their dates released`);
       for (const id of r.expiredHolds) console.log(`  expired hold ${id}`);
       return 0;
+    } finally {
+      await pool.end();
+    }
+  }
+  if (cmd === "kill") {
+    // pnpm sim kill on|off --now <iso> --by <name>            global switch, flipped by a platform operator (owner DB connection)
+    // pnpm sim kill on|off --tenant <id> --now <iso> --by <member id>   tenant switch, flipped by that tenant's owner member
+    const tenant = flag(argv, "--tenant");
+    const now = flag(argv, "--now");
+    const by = flag(argv, "--by");
+    if ((fixture !== "on" && fixture !== "off") || !by || !now || Number.isNaN(Date.parse(now))) {
+      console.error("usage: pnpm sim kill on|off --now <ISO-8601 UTC instant> --by <operator name | owner member id with --tenant> [--tenant <id>]");
+      return 2;
+    }
+    const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL });
+    try {
+      await migrate(pool);
+      const r = await setKillSwitch(
+        { pool, kernel: await loadKernel() },
+        { target: tenant ? { kind: "tenant", tenantId: tenant } : { kind: "global" }, on: fixture === "on", actor: tenant ? { memberId: by } : { operator: by }, now },
+      );
+      console.log(`kill switch ${tenant ? `for ${tenant}` : "(global)"} is now ${fixture}${r.changed ? "" : " (no change)"}; ledger entry written`);
+      return 0;
+    } catch (e) {
+      if (e instanceof KillSwitchError) {
+        console.error(`refused: ${e.message}`);
+        return 1;
+      }
+      throw e;
     } finally {
       await pool.end();
     }
