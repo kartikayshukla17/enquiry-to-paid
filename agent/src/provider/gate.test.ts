@@ -52,7 +52,7 @@ describe("checkEnable: weak model", () => {
     expect(r2.ok).toBe(false);
     expect(Object.keys(loadRegistry(deps.registryPath).enabled)).toEqual(["fixture/recorded-fixture-v1"]);
     expect(existsSync(path.join(tmp, "baselines", "weak-fixture-v0.09cc42a3.json"))).toBe(false);
-  });
+  }, 30_000); // runs the full eval twice; slow under parallel load
 });
 
 describe("checkEnable: equal or better candidate", () => {
