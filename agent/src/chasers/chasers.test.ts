@@ -22,6 +22,8 @@ import { handleOwnerMessage } from "../owner/handle.js";
 import { seedOwnerMembers } from "../owner/seed.js";
 import { nativeAvailability } from "../availability/native.js";
 import { consentStatus, UNSUBSCRIBED_NOTICE } from "./index.js";
+import { appendEntry } from "../ledger/index.js";
+import { APP_ROLE } from "../tenancy/with-tenant.js";
 import { collectingChaserOutbox, type ChaserMessage } from "./index.js";
 
 let db: TestDb;
@@ -406,6 +408,76 @@ describe("a stop word, end to end", () => {
       await flip(false, at(6));
     }
     expect((await consentStatus(db.pool, T.id, ref(th2))).status).toBe("revoked");
+  });
+});
+
+describe("concurrency (real races, row locks)", () => {
+  /** Holds the thread row lock in an open transaction (a customer message or stop word "in flight"), runs `fn` inside it, commits after `release`. */
+  async function withThreadLockHeld(th: string, inFlight: (c: import("pg").PoolClient) => Promise<void>, during: () => Promise<unknown>): Promise<void> {
+    const c = await db.pool.connect();
+    try {
+      await c.query("BEGIN");
+      await c.query(`SET LOCAL ROLE ${APP_ROLE}`);
+      await c.query("SELECT set_config('app.tenant_id', $1, true)", [T.id]);
+      await c.query("SELECT 1 FROM threads WHERE id=$1 FOR UPDATE", [th]);
+      const racing = during(); // the tick claims the timer, then waits for the thread lock we hold
+      await new Promise((r) => setTimeout(r, 150));
+      await inFlight(c);
+      await c.query("COMMIT");
+      await racing;
+    } catch (e) {
+      await c.query("ROLLBACK").catch(() => undefined);
+      throw e;
+    } finally {
+      c.release();
+    }
+  }
+
+  it("three ticks at once send a due chaser exactly once", async () => {
+    const { th } = await optedIn(1);
+    await Promise.all([tick(at(25)), tick(at(25)), tick(at(25))]);
+    expect(sentTo(th)).toHaveLength(1);
+    expect(await ledger(th, "chaser_sent")).toHaveLength(1);
+  });
+
+  it("a customer message committed while the tick waits on the thread lock: the chaser sees it at send time and does not go", async () => {
+    const { th } = await optedIn(1);
+    await withThreadLockHeld(
+      th,
+      (c) => appendEntry(c, kernel, { tenantId: T.id, threadId: th, at: at(24), type: "enquiry", payload: { text: "actually, one more question" } }).then(() => undefined),
+      () => tick(at(25)),
+    );
+    expect(sentTo(th)).toEqual([]);
+    expect(await cancelReasons(th)).toEqual(["customer_reply"]);
+  });
+
+  it("a stop word committed while the tick waits on the thread lock: no chaser", async () => {
+    const { th } = await optedIn(1);
+    await withThreadLockHeld(
+      th,
+      (c) => import("./consent.js").then((m) => m.appendConsent(c, kernel, { tenantId: T.id, threadId: th, customerId: `${T.id}:cust:${ref(th)}`, action: "revoked", source: "stop_word", at: at(24) })).then(() => undefined),
+      () => tick(at(25)),
+    );
+    expect(sentTo(th)).toEqual([]);
+    expect(await cancelReasons(th)).toEqual(["consent_revoked"]);
+  });
+
+  it("a send in flight while a customer reply and a stop word arrive: no deadlock, the chaser goes once, and chaser 2 never does", async () => {
+    const { th } = await optedIn(1);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const slow = { send: async (m: ChaserMessage) => { await gate; sent.push(m); } };
+    const ticking = runDueTimers(db.pool, at(25), { kernel, chaserOutbox: slow });
+    await new Promise((r) => setTimeout(r, 150)); // the tick holds the timer and thread locks, blocked in send
+    const reply = handleEnquiry(deps(), { ...base(th, "and the 13th?", at(25)), fields: { ...GOOD, date: "2026-12-13" } });
+    const stop = say(th, "stop", at(25));
+    await new Promise((r) => setTimeout(r, 150));
+    release();
+    const [, , stopped] = await Promise.all([ticking, reply, stop]);
+    expect(stopped.consent).toBe("revoked");
+    expect(sentTo(th).map((m) => m.n)).toEqual([1]);
+    await tick(at(100));
+    expect(sentTo(th).map((m) => m.n)).toEqual([1]);
   });
 });
 // <<APPEND>>
