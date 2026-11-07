@@ -9,6 +9,7 @@ import type { Pool, PoolClient } from "pg";
 import type { KernelBridge } from "../kernel/index.js";
 import type { ExtractedFields, TurnOutcome } from "../kernel/types.js";
 import { appendEntry, type LedgerRow } from "../ledger/index.js";
+import { readKillSwitch } from "../killswitch/index.js";
 import { scheduleTimer } from "../timers/index.js";
 import { withTenant } from "../tenancy/with-tenant.js";
 import { classifyCustomerText } from "./words.js";
@@ -115,6 +116,13 @@ export async function handleConsentMessage(
     const cs = await consentOf(c, e.tenant.id, customerId);
     if (word === "yes") {
       if (cs.status !== "requested" || cs.threadId !== e.threadId || !th) return undefined;
+      // Only stop words bypass a paused thread or the kill switch: a "yes" there is an ordinary message for T18 / T28 to handle.
+      if (th.state === "paused_owner" || (await readKillSwitch(c, e.tenant.id)).on) return undefined;
+      // It answers the question only if the question was the agent's last word on the thread (a refusal or disclosure since moves on).
+      const lastOutcome = (
+        await c.query<{ type: string }>("SELECT type FROM ledger_entries WHERE tenant_id=$1 AND thread_id=$2 AND type IN ('quote','refusal','disclosure') ORDER BY tenant_seq DESC LIMIT 1", [e.tenant.id, e.threadId])
+      ).rows[0];
+      if (lastOutcome?.type !== "quote") return undefined;
       const ledgerRow = await appendConsent(c, deps.kernel, {
         tenantId: e.tenant.id, threadId: e.threadId, customerId, action: "granted", source: "whatsapp_optin_reply", at: e.now, extra: { requestSeq: cs.seq, text: e.message },
       });

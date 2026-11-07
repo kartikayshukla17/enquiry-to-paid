@@ -118,6 +118,60 @@ describe("consent", () => {
   });
 });
 
+describe("a 'yes' is only an opt-in answer when it is one", () => {
+  const flip = (on: boolean, now: string) => setKillSwitch({ pool: db.pool, kernel }, { target: { kind: "tenant", tenantId: T.id }, on, actor: { memberId: `${T.id}:member:owner:1` }, now });
+  const grants = async (th: string) => (await ledger(th, "consent")).filter((e) => e.payload.action === "granted");
+
+  it("on a thread paused for the owner a 'yes' is left to the takeover handling, and grants nothing", async () => {
+    const th = thread();
+    await quote(th);
+    const seq = (await rows("SELECT tenant_seq::int AS s FROM ledger_entries WHERE thread_id=$1 AND type='quote'", [th]))[0].s as number;
+    await handleOwnerMessage({ pool: db.pool, kernel }, { tenant: T, senderRef: "+91 00000 60001", text: `reply Q${seq} Hello, this is the owner.`, now: at(1) });
+    const calls = extractCalls;
+    const r = await say(th, "yes", at(2));
+    expect(r.consent).toBeUndefined();
+    expect(extractCalls).toBe(calls); // paused: no model either
+    expect(await grants(th)).toEqual([]);
+    expect((await consentStatus(db.pool, T.id, ref(th))).status).toBe("requested");
+    expect(await ledger(th, "enquiry")).toHaveLength(2); // stored for the owner like any paused message
+  });
+
+  it("with the kill switch on a 'yes' is refused like any other message and grants nothing", async () => {
+    const th = thread();
+    await quote(th);
+    await flip(true, at(1));
+    try {
+      const calls = extractCalls;
+      const r = await say(th, "yes", at(2));
+      expect(r.consent).toBeUndefined();
+      expect(r.outcome).toMatchObject({ kind: "refusal", reason: "kill_switch" });
+      expect(extractCalls).toBe(calls);
+    } finally {
+      await flip(false, at(3));
+    }
+    expect(await grants(th)).toEqual([]);
+    expect((await consentStatus(db.pool, T.id, ref(th))).status).toBe("requested");
+  });
+
+  it.each(["ji", "ha", "जी", "Ji!"])("%j alone is not a yes (it is only polite noise)", async (text) => {
+    const th = thread();
+    await quote(th);
+    const r = await say(th, text, at(1));
+    expect(r.consent).toBeUndefined();
+    expect(await grants(th)).toEqual([]);
+  });
+
+  it("a 'yes' counts only while the opt-in question was the last thing the agent said on the thread", async () => {
+    const th = thread();
+    await quote(th);
+    await withTenant(db.pool, T.id, (c) => appendEntry(c, kernel, { tenantId: T.id, threadId: th, at: at(1), type: "refusal", payload: { kind: "refusal", reason: "out_of_policy" } })).then(() => undefined);
+    expect((await say(th, "yes", at(2))).consent).toBeUndefined();
+    expect(await grants(th)).toEqual([]);
+    await say(th, "quote again please", at(3)); // a fresh quote carries the question again
+    expect((await say(th, "yes", at(4))).consent).toBe("granted");
+  });
+});
+
 /** A quoted thread whose customer opted in `optInAfterHours` after the quote. */
 async function optedIn(optInAfterHours = 1, o: Parameters<typeof quote>[2] = {}): Promise<{ th: string; reply: string; total: number }> {
   const th = thread();
