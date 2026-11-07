@@ -10,6 +10,7 @@ import type { PoolClient } from "pg";
 import { readKillSwitch } from "../killswitch/index.js";
 import type { KernelBridge } from "../kernel/index.js";
 import { appendEntry } from "../ledger/index.js";
+import { isCollectedState } from "../payments/webhook.js";
 import { scheduleTimer } from "../timers/index.js";
 import type { Member } from "./members.js";
 import type { OwnerMessageResult } from "./handle.js";
@@ -89,9 +90,9 @@ export async function ownerReplyInTxn(c: PoolClient, kernel: KernelBridge, ctx: 
   });
   const customerMessages = [{ threadId, text: cmd.text }];
   const flag = priced ? " It looks like it has a price in it, so this job is marked as your price and is not billable." : "";
-  if (th.state === "collected") {
-    // Terminal: the job is paid. The message goes out, the thread stays as it is (the agent already stays silent there).
-    return { reply: `Sent to the customer. ${cmd.ref} is already paid, so nothing is paused.${flag}`, customerMessages, ledgerRow };
+  if (isCollectedState(th.state)) {
+    // Terminal: the job is settled. The message goes out, the thread stays as it is (the agent already stays silent there).
+    return { reply: `Sent to the customer. ${cmd.ref} is already settled, so nothing is paused.${flag}`, customerMessages, ledgerRow };
   }
   const resumeAt = new Date(Date.parse(now) + IDLE_RESUME_HOURS * HOUR_MS).toISOString();
   if (th.state !== NOT_PAUSED) {

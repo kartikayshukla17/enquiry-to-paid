@@ -5,9 +5,12 @@ import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import { collectingNotifier } from "../escalation/index.js";
 import type { LlmProvider } from "../llm/types.js";
 import { handleMessage } from "../pipeline/handle-message.js";
-import { seedTenant } from "../payments/test-helpers.js";
+import { paidEvent, seedTenant, TEST_SECRET } from "../payments/test-helpers.js";
 import { withTenant } from "../tenancy/with-tenant.js";
 import { runDueTimers } from "../timers/run.js";
+import { razorpaySim } from "../payments/razorpay-sim.js";
+import { handleWebhook } from "../payments/webhook.js";
+import { proofForThread } from "../payments/proof.js";
 import { handleOwnerMessage } from "./handle.js";
 import { seedOwnerMembers } from "./seed.js";
 import { collectingOutbox, type OwnerOutgoing } from "./types.js";
@@ -125,6 +128,38 @@ describe("explicit handback", () => {
     expect((await cmds(thread)).filter((c) => c === "handback")).toHaveLength(1);
     await runDueTimers(db.pool, at(48), { kernel });
     expect((await cmds(thread)).filter((c) => c === "idle_resume")).toHaveLength(0);
+  });
+});
+
+describe("owner-sent prices are non-billable (T15 proof)", () => {
+  const provider = razorpaySim({ webhookSecret: TEST_SECRET });
+  /** Agent quotes with a payment link; the owner then speaks; the customer pays the agent's link via the signed webhook. */
+  async function paidAfter(ownerText: string | undefined) {
+    const thread = `to-${++n}`;
+    const res = await handleMessage({ ...deps(), payments: provider }, { tenant: T, threadId: thread, customerRef: `cust-${thread}`, rateCard: card, now: T0, availability: { blockedDates: [] }, message: "hello" });
+    if (res.outcome.kind !== "quote") throw new Error("expected quote");
+    const ref = await refFor(thread);
+    if (ownerText) await owner(OWNER, `reply ${ref} ${ownerText}`, at(1));
+    const linkId = (await rows("SELECT provider_link_id FROM payments WHERE thread_id=$1", [thread]))[0].provider_link_id as string;
+    const ev = paidEvent({ linkId, tenantId: T.id, amount: res.outcome.total, eventId: `evt_to_${thread}`, paymentId: `pay_to_${thread}` });
+    await handleWebhook({ pool: db.pool, kernel, payments: provider }, ev.body, ev.headers, at(2));
+    return { thread, proof: await proofForThread(db.pool, kernel, { tenantId: T.id, threadId: thread }) };
+  }
+
+  it("a price in the owner's message makes the paid job non-billable, and the proof says why", async () => {
+    const { proof } = await paidAfter("I can do it for Rs 70,000 all in.");
+    expect(proof).toMatchObject({ billable: "no", reason: "owner_priced", chainVerified: true });
+    expect(proof.why).toContain("owner");
+    expect(proof.chain.some((e) => e.type === "collected")).toBe(true);
+  });
+
+  it("an owner message with no price in it leaves the agent's price billable", async () => {
+    const { proof } = await paidAfter("Happy to help, I will call you tonight.");
+    expect(proof).toMatchObject({ billable: "yes", reason: "ok" });
+  });
+
+  it("an owner who never spoke: still billable (control)", async () => {
+    expect((await paidAfter(undefined)).proof).toMatchObject({ billable: "yes" });
   });
 });
 
