@@ -327,4 +327,85 @@ describe("stop words", () => {
     expect(await ledger(th, "stop")).toEqual([]);
   });
 });
+
+describe("a stop word, end to end", () => {
+  it("cancels the pending chasers, so nothing is sent at 24h or 72h", async () => {
+    const { th } = await optedIn(1);
+    await say(th, "STOP", at(2));
+    await tick(at(25));
+    await tick(at(73));
+    expect(sentTo(th)).toEqual([]);
+    expect(await cancelReasons(th)).toEqual(["stop_word"]);
+  });
+
+  it("stop after chaser 1: chaser 2 never goes", async () => {
+    const { th } = await optedIn(1);
+    await tick(at(25));
+    await say(th, "ruko", at(30));
+    await tick(at(73));
+    expect(sentTo(th).map((m) => m.n)).toEqual([1]);
+  });
+
+  it("the customer is told once; a second stop word gets no reply and no second revocation", async () => {
+    const { th } = await optedIn(1);
+    expect((await say(th, "stop", at(2))).reply).toBe(UNSUBSCRIBED_NOTICE);
+    expect((await say(th, "STOP!!", at(3))).reply).toBe("");
+    expect((await say(th, "बंद करो", at(4))).reply).toBe("");
+    expect((await ledger(th, "consent")).map((e) => e.payload.action)).toEqual(["requested", "granted", "revoked"]);
+    expect((await ledger(th, "stop")).map((e) => e.payload.confirmed)).toEqual([true, false, false]);
+  });
+
+  it("revocation persists: a new quote does not ask again, no chaser ever goes, and a later 'yes' is just a message", async () => {
+    const { th } = await optedIn(1);
+    await say(th, "stop", at(2));
+    const again = await handleEnquiry(deps(), { ...base(th, "one more quote please", at(10)), fields: { ...GOOD, guestCount: 150 } });
+    expect(again.outcome.kind).toBe("quote");
+    expect(again.reply).not.toContain("Reply YES");
+    const calls = extractCalls;
+    const yes = await say(th, "yes", at(11));
+    expect(yes.consent).toBeUndefined();
+    expect(extractCalls).toBe(calls + 1);
+    await tick(at(40));
+    await tick(at(200));
+    expect(sentTo(th)).toEqual([]);
+    expect((await consentStatus(db.pool, T.id, ref(th))).status).toBe("revoked");
+    expect(await cancelReasons(th)).toContain("consent_revoked");
+  });
+
+  it("a stop with no consent ever given is still recorded and answered once; and on a thread that does not exist yet", async () => {
+    const th = thread();
+    const r = await say(th, "Unsubscribe", at(1));
+    expect(r.reply).toBe(UNSUBSCRIBED_NOTICE);
+    expect((await consentStatus(db.pool, T.id, ref(th))).status).toBe("revoked");
+    expect(await rows("SELECT 1 FROM threads WHERE id=$1", [th])).toEqual([]);
+  });
+
+  it("revokes for the customer, not the thread: pending chasers on all of their threads are cancelled", async () => {
+    const { th: first } = await optedIn(1);
+    const second = thread();
+    const q2 = await handleEnquiry(deps(), { ...base(second, "another quote", at(2)), customerRef: ref(first), fields: { ...GOOD, date: "2027-05-01" } });
+    expect(q2.outcome.kind).toBe("quote");
+    await handleMessage(deps(), { ...base(second, "mat bhejo", at(3)), customerRef: ref(first) });
+    await tick(at(100));
+    expect(sentTo(first)).toEqual([]);
+    expect(sentTo(second)).toEqual([]);
+    expect(await cancelReasons(first)).toEqual(["stop_word"]);
+  });
+
+  it("is honoured while the thread is paused for the owner and while the kill switch is on", async () => {
+    const { th } = await optedIn(1);
+    const seq = (await rows("SELECT tenant_seq::int AS s FROM ledger_entries WHERE thread_id=$1 AND type='quote'", [th]))[0].s as number;
+    await handleOwnerMessage({ pool: db.pool, kernel }, { tenant: T, senderRef: "+91 00000 60001", text: `reply Q${seq} Hello`, now: at(2) });
+    expect((await say(th, "stop", at(3))).reply).toBe(UNSUBSCRIBED_NOTICE);
+    const { th: th2 } = await optedIn(1);
+    const flip = (on: boolean, now: string) => setKillSwitch({ pool: db.pool, kernel }, { target: { kind: "tenant", tenantId: T.id }, on, actor: { memberId: `${T.id}:member:owner:1` }, now });
+    await flip(true, at(4));
+    try {
+      expect((await say(th2, "band karo", at(5))).reply).toBe(UNSUBSCRIBED_NOTICE);
+    } finally {
+      await flip(false, at(6));
+    }
+    expect((await consentStatus(db.pool, T.id, ref(th2))).status).toBe("revoked");
+  });
+});
 // <<APPEND>>
