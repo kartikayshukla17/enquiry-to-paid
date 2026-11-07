@@ -1,5 +1,5 @@
 /** T18: owner takeover and handback. All data FICTIONAL. Seams: handleOwnerMessage, handleMessage, runDueTimers (injected clock), proofForThread. */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestDb, type TestDb } from "../ledger/test-db.js";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import { collectingNotifier } from "../escalation/index.js";
@@ -11,6 +11,7 @@ import { runDueTimers } from "../timers/run.js";
 import { razorpaySim } from "../payments/razorpay-sim.js";
 import { handleWebhook } from "../payments/webhook.js";
 import { proofForThread } from "../payments/proof.js";
+import { setKillSwitch } from "../killswitch/index.js";
 import { handleOwnerMessage } from "./handle.js";
 import { seedOwnerMembers } from "./seed.js";
 import { collectingOutbox, type OwnerOutgoing } from "./types.js";
@@ -163,7 +164,115 @@ describe("owner-sent prices are non-billable (T15 proof)", () => {
   });
 });
 
+describe("kill switch interplay", () => {
+  const flip = (on: boolean) => setKillSwitch({ pool: db.pool, kernel }, { target: { kind: "tenant", tenantId: T.id }, on, actor: { memberId: `${T.id}:member:owner:1` }, now: T0 });
+  const clearOn = async (fn: () => Promise<void>) => {
+    await flip(true);
+    try {
+      await fn();
+    } finally {
+      await flip(false);
+    }
+  };
+
+  it("fails closed for prices: with the switch on, an owner message that could be a price is not sent and does not pause", async () => {
+    const { thread, ref } = await quoted();
+    await clearOn(async () => {
+      for (const text of ["We can do Rs 70,000", "just 70000 for you", "seventy ₹ ok", "around 80k", "$900 flat"]) {
+        const r = await owner(OWNER, `reply ${ref} ${text}`);
+        expect(r.customerMessages).toEqual([]);
+        expect(r.reply).toContain("Kill switch is on");
+      }
+      expect(await state(thread)).toBe("quoted");
+      expect(await cmds(thread)).toEqual([]);
+      const opsLogged = await rows("SELECT payload FROM ledger_entries WHERE type='owner_message' AND payload->>'rejected'='kill_switch' AND payload->>'command'='reply'");
+      expect(opsLogged.length).toBeGreaterThanOrEqual(5);
+    });
+  });
+
+  it("a price-free owner message still goes out with the switch on (a human talking to a customer is not the agent quoting), pauses, and is recorded as sent under the switch", async () => {
+    const { thread, ref } = await quoted();
+    await clearOn(async () => {
+      const r = await owner(OWNER, `reply ${ref} Sorry for the delay, calling you shortly.`);
+      expect(r.customerMessages).toHaveLength(1);
+      expect(await state(thread)).toBe("paused_owner");
+      expect((await ledger(thread, "owner_message"))[0]!.payload).toMatchObject({ command: "owner_reply", killSwitchOn: true, ownerPriced: false });
+    });
+  });
+
+  it("a customer message to a paused thread under the switch is held and shown to the owner, with no kill-switch refusal and no escalation; after handback the switch refuses as usual", async () => {
+    const { thread, ref } = await quoted();
+    await owner(OWNER, `reply ${ref} one moment`);
+    outbox.length = 0;
+    await clearOn(async () => {
+      const res = await customer(thread, "hello?", at(1));
+      expect(res.held).toBe(true);
+      expect(res.reply).toBe("");
+      expect((await ledger(thread, "refusal")).length).toBe(0);
+      expect(outbox.map((m) => m.kind)).toEqual(["customer_message", "customer_message"]);
+      await owner(OWNER, `handback ${ref}`, at(2));
+      const after = await customer(thread, "hello again", at(3));
+      expect(after.outcome).toMatchObject({ kind: "refusal", reason: "kill_switch" });
+    });
+  });
+});
+
+describe("who may take over", () => {
+  it("staff and strangers can not reply or hand back; nothing is sent or paused; the attempt is logged", async () => {
+    const { thread, ref } = await quoted();
+    const staff = await owner(STAFF, `reply ${ref} hi there`);
+    expect(staff.customerMessages).toEqual([]);
+    expect(staff.reply).toContain("only the owner or a manager");
+    const stranger = await owner("+91 00000 59999", `reply ${ref} hi there`);
+    expect(stranger.customerMessages).toEqual([]);
+    expect(stranger.reply).toContain("not registered");
+    expect(await state(thread)).toBe("quoted");
+    expect((await owner(STAFF, "handback")).reply).toContain("only the owner or a manager");
+  });
+
+  it("an unknown ref, a refusal number used as a quote number and another tenant's ref all say 'can not find' and do nothing", async () => {
+    const { thread } = await quoted();
+    const r = await owner(OWNER, "reply Q99999 hi");
+    expect(r.reply).toContain("can not find");
+    expect(r.customerMessages).toEqual([]);
+    const q = await refFor(thread);
+    const other = { id: "tenant-takeover-other", name: "FICTIONAL: Other Banquets" };
+    await seedTenant(db.pool, kernel, other);
+    await seedOwnerMembers(db.pool, other.id, [{ role: "owner", phone: "+91 00000 60001" }]);
+    const cross = await handleOwnerMessage({ pool: db.pool, kernel }, { tenant: other, senderRef: "+91 00000 60001", text: `reply ${q} hello from the wrong tenant`, now: T0 });
+    expect(cross.customerMessages).toEqual([]);
+    expect(await state(thread)).toBe("quoted");
+  });
+
+  it("tenancy: another tenant's session sees none of this tenant's pause, timer or held-message rows", async () => {
+    const { thread, ref } = await quoted();
+    await owner(OWNER, `reply ${ref} hi`);
+    await customer(thread, "held one", at(1));
+    const seen = await withTenant(db.pool, "tenant-takeover-other", async (c) => ({
+      timers: (await c.query("SELECT 1 FROM timers WHERE subject_id=$1", [thread])).rowCount,
+      ledger: (await c.query("SELECT 1 FROM ledger_entries WHERE thread_id=$1", [thread])).rowCount,
+      threads: (await c.query("SELECT 1 FROM threads WHERE id=$1", [thread])).rowCount,
+    }));
+    expect(seen).toEqual({ timers: 0, ledger: 0, threads: 0 });
+    expect((await rows("SELECT 1 FROM timers WHERE subject_id=$1", [thread])).length).toBe(1);
+  });
+
+  it("a paid (settled) thread: the message goes out, the thread is not paused", async () => {
+    const thread = `to-${++n}`;
+    await customer(thread, "hello");
+    await db.pool.query("UPDATE threads SET state='collected' WHERE id=$1", [thread]);
+    const r = await owner(OWNER, `reply ${await refFor(thread)} Thank you for booking!`);
+    expect(r.customerMessages).toHaveLength(1);
+    expect(await state(thread)).toBe("collected");
+    expect(await cmds(thread)).toEqual(["owner_reply"]);
+  });
+});
+
 describe("12h idle resume (durable timer, injected clock)", () => {
+  beforeEach(async () => {
+    await runDueTimers(db.pool, at(10_000), { kernel }); // drain timers left by earlier tests so each test sees only its own
+  });
+
   it("resumes exactly 12 hours after the owner's last message, not before; then the agent answers; the ledger says it was the timer", async () => {
     const { thread, ref } = await quoted();
     await owner(OWNER, `reply ${ref} One moment please.`, at(0));
