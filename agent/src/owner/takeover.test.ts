@@ -13,6 +13,7 @@ import { handleWebhook } from "../payments/webhook.js";
 import { proofForThread } from "../payments/proof.js";
 import { setKillSwitch } from "../killswitch/index.js";
 import { handleOwnerMessage } from "./handle.js";
+import { looksLikePrice } from "./takeover.js";
 import { seedOwnerMembers } from "./seed.js";
 import { collectingOutbox, type OwnerOutgoing } from "./types.js";
 
@@ -130,6 +131,12 @@ describe("explicit handback", () => {
     await runDueTimers(db.pool, at(48), { kernel });
     expect((await cmds(thread)).filter((c) => c === "idle_resume")).toHaveLength(0);
   });
+});
+
+describe("looksLikePrice fails safe toward non-billable", () => {
+  const priced = ["७०,०००", "Rs70", "INR70", "seventy thousand", "70 thousand", "pachaas hazaar", "50 hazar", "80 per head", "70 only", "ek lakh", "5k", "₹ fifty", "twenty", "two hundred", "rupaye de dena", "Rs. 70"];
+  it.each(priced)("treats %j as priced", (t) => expect(looksLikePrice(t)).toBe(true));
+  it.each(["I will call them today, thanks", "Hello, this is the owner. Let me check with the chef."])("leaves %j unpriced", (t) => expect(looksLikePrice(t)).toBe(false));
 });
 
 describe("owner-sent prices are non-billable (T15 proof)", () => {
@@ -400,9 +407,10 @@ describe("12h idle resume (durable timer, injected clock)", () => {
     const { thread, ref } = await quoted();
     await owner(OWNER, `reply ${ref} One moment please.`, at(0));
     await customer(thread, "hello?", at(5));
-    expect((await runDueTimers(db.pool, at(11.99), { kernel })).resumedThreads).toEqual([]);
+    const justBefore = new Date(Date.parse(at(12)) - 1000).toISOString(); // 11:59:59
+    expect((await runDueTimers(db.pool, justBefore, { kernel })).resumedThreads).toEqual([]);
     expect(await state(thread)).toBe("paused_owner");
-    expect((await customer(thread, "still there?", at(11.99))).reply).toBe("");
+    expect((await customer(thread, "still there?", justBefore)).reply).toBe("");
 
     const tick = await runDueTimers(db.pool, at(12), { kernel });
     expect(tick.resumedThreads).toEqual([thread]);

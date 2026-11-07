@@ -1,0 +1,28 @@
+{
+  "id": "owner-02",
+  "comment": "FICTIONAL. Takeover: the agent escalates, the owner takes over the conversation, the customer's follow-up is held and shown to the owner and manager (not the customer), then the owner hands back. All phone numbers are obviously fictional.",
+  "tenant": { "id": "tenant-takeover-demo", "name": "FICTIONAL: Marigold Hall" },
+  "rateCard": "rate-cards/fictional-banquet-seasonal.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-tk1",
+  "availability": { "blockedDates": [] },
+  "owners": [
+    { "role": "owner", "phone": "+91 00000 00001" },
+    { "role": "manager", "phone": "+91 00000 00002" },
+    { "role": "staff", "phone": "+91 00000 00003" }
+  ],
+  "messages": [
+    {
+      "text": "Wedding on 13 June 2027 for about 300 guests, what would it cost?",
+      "extracted": { "service": "banquet", "date": "2027-06-13", "guestCount": 300, "language": "en", "confidenceBps": 9100 },
+      "now": "2026-11-07T10:01:00Z"
+    },
+    { "owner": "+91 00000 00001", "text": "reply R4 Hello, I will call you this evening.", "now": "2026-11-07T10:02:00Z" },
+    {
+      "text": "Can you do the 20th instead?",
+      "extracted": { "service": "banquet", "date": "2027-06-20", "guestCount": 300, "language": "en", "confidenceBps": 9100 },
+      "now": "2026-11-07T10:30:00Z"
+    },
+    { "owner": "+91 00000 00001", "text": "handback", "now": "2026-11-07T11:00:00Z" }
+  ]
+}

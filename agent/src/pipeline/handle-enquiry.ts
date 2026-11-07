@@ -120,7 +120,13 @@ export async function handleEnquiry(
   if (decided.surface) {
     // After commit, like escalations: the message is already durable when the owner is told.
     const sv = decided.surface;
-    if (deps.ownerOutbox) for (const m of sv.to) await deps.ownerOutbox.send({ tenantId: e.tenant.id, toMemberId: m.id, role: m.role, kind: "customer_message", text: sv.text, at: e.now });
+    // The ledger says "surfaced" only once the owner outbox really took the message; with no outbox nobody was told, so no row.
+    if (deps.ownerOutbox) {
+      for (const m of sv.to) await deps.ownerOutbox.send({ tenantId: e.tenant.id, toMemberId: m.id, role: m.role, kind: "customer_message", text: sv.text, at: e.now });
+      await withTenant(deps.pool, e.tenant.id, (c) =>
+        appendEntry(c, deps.kernel, { tenantId: e.tenant.id, threadId: e.threadId, at: e.now, type: "owner_message", payload: { command: "customer_message_surfaced", ref: sv.ref, to: sv.to.map((m) => m.id), enquirySeq: ledgerRow.seq } }),
+      );
+    }
     return { reply: "", outcome, ledgerRow, fields, held: true };
   }
   // After commit: the refusal is durable before anyone is told about it.
@@ -144,7 +150,7 @@ interface Decision {
   ledgerRow: LedgerRow;
   fields: ExtractedFields;
   clarifying: boolean;
-  surface?: { to: Member[]; text: string };
+  surface?: { to: Member[]; text: string; ref: string | null };
 }
 
 type Deps = { ownerOutbox?: OwnerOutbox; pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider; payments?: PaymentProvider; paymentProviders?: ProviderRegistry };
@@ -160,9 +166,8 @@ async function holdForOwner(client: PoolClient, kernel: KernelBridge, e: Enquiry
   const ref = await threadRef(client, e.tenant.id, e.threadId);
   const label = ref ?? "a conversation";
   const text = [`[${label}] The customer wrote while you have this conversation:`, `"${e.message}"`, ref ? `Reply: reply ${ref} <message> / handback ${ref}` : "Say handback to give it back to the agent."].join("\n");
-  await appendEntry(client, kernel, { ...base, type: "owner_message", payload: { command: "customer_message_surfaced", ref: ref ?? null, to: to.map((m) => m.id), enquirySeq: ledgerRow.seq } });
   const outcome: TurnOutcome = { kind: "refusal", reason: "out_of_policy", ruleGap: "thread_paused_owner" };
-  return { outcome, reply: "", ledgerRow, fields: fields ?? { language: "unknown", confidenceBps: 0 }, clarifying: false, surface: { to, text } };
+  return { outcome, reply: "", ledgerRow, fields: fields ?? { language: "unknown", confidenceBps: 0 }, clarifying: false, surface: { to, text, ref: ref ?? null } };
 }
 
 async function decide(

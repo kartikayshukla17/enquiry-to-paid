@@ -82,6 +82,8 @@ export interface RunResult {
   quote: TurnOutcome;
   fields: ExtractedFields & { date: string; guestCount: number };
   ledgerRow: LedgerRow;
+  /** True when the thread is paused for the owner: the customer got no reply and the owner was shown the message. */
+  held?: true;
   /** One entry per message processed, in order (the top-level fields describe the last). */
   turns: Omit<RunResult, "turns" | "ticks" | "payments" | "ownerTranscript">[];
   /** One entry per `tick` step: what the timer worker did at that clock. */
@@ -166,11 +168,11 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
     let res;
     if (c.extracted === undefined) {
       llm ??= createProvider();
-      res = await handleMessage({ pool: opts.pool, kernel, notifier, llm, wordReplies: opts.wordReplies ?? process.env.LLM_WORD_REPLIES === "1", ...(availability && { availability }), ...(payments && { payments }) }, input);
+      res = await handleMessage({ pool: opts.pool, kernel, notifier, ownerOutbox, llm, wordReplies: opts.wordReplies ?? process.env.LLM_WORD_REPLIES === "1", ...(availability && { availability }), ...(payments && { payments }) }, input);
     } else {
-      res = await handleEnquiry({ pool: opts.pool, kernel, notifier, ...(availability && { availability }), ...(payments && { payments }) }, { ...input, fields: { ...c.extracted, ...opts.overrideFields } });
+      res = await handleEnquiry({ pool: opts.pool, kernel, notifier, ownerOutbox, ...(availability && { availability }), ...(payments && { payments }) }, { ...input, fields: { ...c.extracted, ...opts.overrideFields } });
     }
-    turns.push({ reply: res.reply, quote: res.outcome, fields: res.fields as RunResult["fields"], ledgerRow: res.ledgerRow });
+    turns.push({ reply: res.reply, quote: res.outcome, fields: res.fields as RunResult["fields"], ledgerRow: res.ledgerRow, ...(res.held && { held: true as const }) });
   };
   for (const m of selected) {
     if (m.killSwitch) {

@@ -20,14 +20,25 @@ const HOUR_MS = 3_600_000;
 const TIMER_KIND = "owner_idle_resume" as const;
 const NOT_PAUSED = "paused_owner";
 
+const NUMBER_WORDS = [
+  // English
+  "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty",
+  "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "hundred", "thousand", "lakh", "lakhs", "lac", "lacs", "crore", "crores", "million",
+  // Hinglish
+  "ek", "do", "teen", "char", "chaar", "paanch", "panch", "chhe", "saat", "aath", "nau", "das", "bees", "tees", "chalis", "pachaas", "pachas", "saath", "sattar", "assi", "nabbe", "sau", "hazaar", "hazar", "hajar", "hajaar",
+  // currency words
+  "rs", "inr", "rupee", "rupees", "rupaye", "rupaya", "rupay", "usd", "aed", "dirham", "dirhams",
+];
+const PRICE_RE = new RegExp(`[₹$€£]|\\p{Nd}|(?<![\\p{L}\\p{N}])(?:${NUMBER_WORDS.join("|")})(?![\\p{L}\\p{N}])|(?<![\\p{L}\\p{N}])(?:rs|inr)(?=\\p{Nd})|\\p{Nd}\\s*k(?![\\p{L}\\p{N}])`, "iu");
+
 /**
- * Could this free text be a price? Deliberately broad (fail closed): a currency marker, an amount word, a number of three
- * or more digits (commas allowed), or a number followed by k / lakh / crore. A hit means: not sent while the kill switch is
- * on, and the job is flagged owner-priced (never billable). Dates like 2026-12-12 also match; that errs on the side of
- * not billing, never of billing a price the agent did not set.
+ * Could this free text state a price? Fail-safe toward non-billable: any Unicode decimal digit (Devanagari too), a number
+ * word (English or Hinglish: "seventy thousand", "pachaas hazaar"), a currency word or symbol, or a digit-k ("5k"). A hit
+ * means: not sent while the kill switch is on, and the job is flagged owner-priced (never billable). It over-matches on
+ * purpose (dates, "do" in English); that errs on the side of not billing, never of billing a price the agent did not set.
  */
 export function looksLikePrice(text: string): boolean {
-  return /[₹$€£]|\b(?:rs|inr|rupees?|usd|aed|dirhams?|lakhs?|lacs?|crores?)\b|\d[\d,]{2,}|\d\s*(?:k|l|lakh|lac|cr)\b/i.test(text);
+  return PRICE_RE.test(text);
 }
 
 type Ctx = { tenant: { id: string; name: string }; member: Member; now: string; opsThreadId: string };

@@ -8,7 +8,7 @@ import { runChat } from "./chat.js";
 import { REPO_ROOT } from "../ratecard/paths.js";
 
 /**
- * Local-only HTTP seam for the web simulator page: POST /chat {text, customerRef?, tenantId?, card?} -> {reply, ledgerRow}.
+ * Local-only HTTP seam for the web simulator page: POST /chat {text, customerRef?, tenantId?, card?} -> {reply, ledgerRow, held?}.
  * Same pipeline as `pnpm sim chat`; nothing here prices or words anything. Binds to 127.0.0.1 only.
  */
 const PORT = Number(process.env.SIM_WEB_PORT ?? 4010);
@@ -59,7 +59,7 @@ createServer(async (req, res) => {
     // Each card gets its own tenant so threads and approvals never mix across verticals.
     const tenantId = card ? `tenant-web-${card.split("fictional-")[1]!.replace(".json", "")}` : "tenant-rose-court";
     const r = await runChat(b.text, { pool, tenantId, customerRef, ...(card && { card }) });
-    return send(200, { reply: r.reply, ledgerRow: r.ledgerRow });
+    return send(200, { reply: r.reply, ledgerRow: r.ledgerRow, ...(r.held && { held: true }) });
   } catch (e) {
     console.error(e instanceof Error ? e.message : "error"); // never log the message text
     return send(500, { error: "simulator error" });
