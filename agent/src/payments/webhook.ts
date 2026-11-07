@@ -9,18 +9,22 @@
  *   5. not already collected -> else flagged;
  *   6. otherwise: payment -> collected, `collected` ledger entry, thread -> collected, in one transaction.
  */
+import { createHash } from "node:crypto";
 import type { Pool } from "pg";
 import type { KernelBridge } from "../kernel/index.js";
 import { appendEntry } from "../ledger/index.js";
 import { withTenant } from "../tenancy/with-tenant.js";
 import type { PaymentProvider } from "./types.js";
 
+/** A collected thread is terminal (the pipeline reads this; it never writes the state). */
+export const isCollectedState = (state: string | undefined): boolean => state === "collected";
+
 export type WebhookResult =
   | { status: "collected"; threadId: string; paymentId: string; amountMinor: number }
   | { status: "duplicate" }
   | { status: "rejected"; reason: "bad_signature" | "unparseable" }
   | { status: "ignored"; reason: "unknown_link" | "not_a_payment_event" }
-  | { status: "mismatch"; reason: "amount_mismatch" | "currency_mismatch" | "already_collected"; threadId: string; paymentId: string };
+  | { status: "mismatch"; reason: "amount_mismatch" | "currency_mismatch"; threadId: string; paymentId: string };
 
 interface PaymentRow {
   id: string;
@@ -48,25 +52,35 @@ export async function handleWebhook(
 
   try {
     return await withTenant(deps.pool, ev.tenantId, async (client): Promise<WebhookResult> => {
-      const seen = await client.query("SELECT 1 FROM payment_events WHERE tenant_id=$1 AND provider=$2 AND event_id=$3", [ev.tenantId, provider, ev.eventId]);
+      // Idempotency key = hash of the SIGNED raw body. The event-id header sits outside the HMAC, so anyone replaying a
+      // captured body+signature could pick a fresh header each time; the body they cannot change.
+      const eventKey = `sha256:${createHash("sha256").update(rawBody).digest("hex")}`;
+      const seen = await client.query("SELECT 1 FROM payment_events WHERE tenant_id=$1 AND provider=$2 AND event_id=$3", [ev.tenantId, provider, eventKey]);
       if (seen.rowCount) return { status: "duplicate" };
       const record = (paymentId: string | null, outcome: string, detail: string | null) =>
         client.query(
           "INSERT INTO payment_events (tenant_id, provider, event_id, payment_id, outcome, detail, received_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-          [ev.tenantId, provider, ev.eventId, paymentId, outcome, detail, at],
+          [ev.tenantId, provider, eventKey, paymentId, outcome, detail, at],
         );
-      const pay = (
-        await client.query<PaymentRow>(
-          `SELECT id, thread_id, quote_ledger_seq::int AS quote_ledger_seq, amount_minor::int AS amount_minor, currency, status
+      // bigint columns come back as strings: converted with an explicit safe-integer check, never ::int (which overflows at 2^31).
+      const raw = (
+        await client.query<{ id: string; thread_id: string; quote_ledger_seq: string; amount_minor: string; currency: string; status: string }>(
+          `SELECT id, thread_id, quote_ledger_seq::text AS quote_ledger_seq, amount_minor::text AS amount_minor, currency, status
              FROM payments WHERE provider=$1 AND provider_link_id=$2 FOR UPDATE`,
           [provider, ev.providerLinkId],
         )
       ).rows[0];
+      const pay: PaymentRow | undefined = raw && { ...raw, quote_ledger_seq: Number(raw.quote_ledger_seq), amount_minor: Number(raw.amount_minor) };
+      if (pay && (!Number.isSafeInteger(pay.amount_minor) || !Number.isSafeInteger(pay.quote_ledger_seq))) throw new Error("payment amount outside the safe integer range");
       if (!pay) {
-        await record(null, "unknown_link", ev.providerLinkId);
+        // A signed event naming a tenant that does not exist cannot be recorded (FK): ignore it, nothing to attach it to.
+        if ((await client.query("SELECT 1 FROM tenants WHERE id=$1", [ev.tenantId])).rowCount) await record(null, "unknown_link", ev.providerLinkId);
         return { status: "ignored", reason: "unknown_link" };
       }
-      const flag = async (reason: "amount_mismatch" | "currency_mismatch" | "already_collected"): Promise<WebhookResult> => {
+      // Already collected (this payment or this thread): any further paid event is a duplicate, and writes nothing.
+      const th = (await client.query<{ state: string }>("SELECT state FROM threads WHERE id=$1 FOR UPDATE", [pay.thread_id])).rows[0];
+      if (pay.status === "collected" || th?.state === "collected") return { status: "duplicate" };
+      const flag = async (reason: "amount_mismatch" | "currency_mismatch"): Promise<WebhookResult> => {
         await appendEntry(client, deps.kernel, {
           tenantId: ev.tenantId, threadId: pay.thread_id, at, type: "payment_mismatch",
           payload: { reason, paymentId: pay.id, eventId: ev.eventId, expected: { amountMinor: pay.amount_minor, currency: pay.currency }, received: { amountMinor: ev.amountMinor, currency: ev.currency } },
@@ -76,8 +90,6 @@ export async function handleWebhook(
       };
       if (ev.currency !== pay.currency) return flag("currency_mismatch");
       if (ev.amountMinor !== pay.amount_minor) return flag("amount_mismatch");
-      const thread = (await client.query<{ state: string }>("SELECT state FROM threads WHERE id=$1 FOR UPDATE", [pay.thread_id])).rows[0];
-      if (pay.status === "collected" || thread?.state === "collected") return flag("already_collected");
 
       const quote = (await client.query<{ rate_card_hash: string | null }>("SELECT rate_card_hash FROM ledger_entries WHERE seq=$1", [pay.quote_ledger_seq])).rows[0];
       await appendEntry(client, deps.kernel, {

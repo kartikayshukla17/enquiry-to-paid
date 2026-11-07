@@ -133,8 +133,8 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
     if (m.pay) {
       // The simulated provider "pays" the tenant's newest unpaid link: a Razorpay-shaped event, signed with the demo secret.
       const row = (
-        await opts.pool.query<{ tenant_id: string; provider_link_id: string; amount_minor: number; currency: string }>(
-          `SELECT tenant_id, provider_link_id, amount_minor::int AS amount_minor, currency FROM payments
+        await opts.pool.query<{ tenant_id: string; provider_link_id: string; amount_minor: string; currency: string }>(
+          `SELECT tenant_id, provider_link_id, amount_minor::text AS amount_minor, currency FROM payments
             WHERE tenant_id=$1 AND status='created' ORDER BY created_at DESC, quote_ledger_seq DESC LIMIT 1`,
           [fx.tenant.id],
         )
@@ -143,12 +143,13 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
         paid.push({ status: "no_link" });
         continue;
       }
+      const amount = Number(row.amount_minor);
       const body = JSON.stringify({
         entity: "event",
         event: "payment_link.paid",
         payload: {
-          payment_link: { entity: { id: row.provider_link_id, amount: row.amount_minor, currency: row.currency, notes: { tenant_id: row.tenant_id } } },
-          payment: { entity: { id: `pay_sim_${paid.length + 1}`, amount: row.amount_minor, currency: row.currency } },
+          payment_link: { entity: { id: row.provider_link_id, amount, currency: row.currency, notes: { tenant_id: row.tenant_id } } },
+          payment: { entity: { id: `pay_sim_${paid.length + 1}`, amount, currency: row.currency } },
         },
       });
       const headers = { "x-razorpay-signature": createHmac("sha256", DEMO_WEBHOOK_SECRET).update(body).digest("hex"), "x-razorpay-event-id": `evt_sim_${fx.id}_${paid.length + 1}` };

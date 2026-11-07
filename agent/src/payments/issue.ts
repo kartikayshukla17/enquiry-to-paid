@@ -79,7 +79,7 @@ export async function requestPaymentLink(
     if ((await readKillSwitch(client, a.tenantId)).on) return { ok: false, reason: "kill_switch" } as const;
     const q = (
       await client.query<{ seq: number; payload: { total?: unknown; currency?: unknown; validUntil?: unknown } }>(
-        "SELECT seq::int AS seq, payload FROM ledger_entries WHERE tenant_id=$1 AND thread_id=$2 AND type='quote' ORDER BY tenant_seq DESC LIMIT 1",
+        "SELECT seq::float8 AS seq, payload FROM ledger_entries WHERE tenant_id=$1 AND thread_id=$2 AND type='quote' ORDER BY tenant_seq DESC LIMIT 1",
         [a.tenantId, a.threadId],
       )
     ).rows[0];

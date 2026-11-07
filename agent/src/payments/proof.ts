@@ -74,7 +74,7 @@ export async function proofForThread(pool: Pool, kernel: KernelBridge, a: { tena
   const rows = await withTenant(pool, a.tenantId, async (c) =>
     (
       await c.query<Row>(
-        `SELECT seq::int AS seq, tenant_seq::int AS tenant_seq, type, at, hash, payload, rate_card_hash, corrects::int AS corrects
+        `SELECT seq::float8 AS seq, tenant_seq::float8 AS tenant_seq, type, at, hash, payload, rate_card_hash, corrects::float8 AS corrects
            FROM ledger_entries WHERE tenant_id=$1 AND thread_id=$2 ORDER BY tenant_seq`,
         [a.tenantId, a.threadId],
       )

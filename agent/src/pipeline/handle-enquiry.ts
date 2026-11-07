@@ -14,6 +14,7 @@ import { encryptPii, phoneHash, piiKeysFromEnv, type PiiKeys } from "../security
 import { withTenant } from "../tenancy/with-tenant.js";
 import { readKillSwitch, type KillScope } from "../killswitch/index.js";
 import { issuePaymentLinkInTxn } from "../payments/issue.js";
+import { isCollectedState } from "../payments/webhook.js";
 import type { PaymentProvider } from "../payments/types.js";
 
 export interface EnquiryInput {
@@ -188,6 +189,17 @@ async function decide(
         payload: { status: "kill_switch", scope: killed.scope },
         ...(e.provenance ?? FIXTURE_PROVENANCE),
       });
+    } else if (isCollectedState(stored?.state)) {
+      // Terminal: the job is paid for. A later message neither re-quotes, issues another link nor reopens the thread; a human takes it.
+      fields = (stored?.fields as unknown as ExtractedFields | undefined) ?? { language: "unknown", confidenceBps: 0 };
+      outcome = { kind: "refusal", reason: "out_of_policy", ruleGap: "thread_already_collected" };
+      reply = holdingReply("out_of_policy");
+      await appendEntry(client, deps.kernel, {
+        ...base,
+        type: "extraction",
+        payload: { status: "thread_collected" },
+        ...(e.provenance ?? FIXTURE_PROVENANCE),
+      });
     } else if (gated) {
       // Gate: this read is untrusted. Nothing merges into the thread, the kernel is not consulted, no quote is possible.
       fields = (stored?.fields as unknown as ExtractedFields | undefined) ?? { language: "unknown", confidenceBps: 0 };
@@ -309,7 +321,8 @@ async function decide(
     }
     // A clarifying question keeps the thread open; the follow-up message completes it. A gated read leaves stored fields alone.
     const state = outcome.kind === "disclosure" ? (stored?.state ?? "open") : outcome.kind === "quote" ? "quoted" : clarifying ? "open" : "refused";
-    if (gated || killed) await client.query("UPDATE threads SET state = $2 WHERE id = $1", [e.threadId, state]);
+    if (isCollectedState(stored?.state)) { /* terminal: state and fields stay as they are */ }
+    else if (gated || killed) await client.query("UPDATE threads SET state = $2 WHERE id = $1", [e.threadId, state]);
     else await client.query("UPDATE threads SET state = $2, fields = $3::jsonb WHERE id = $1", [e.threadId, state, JSON.stringify(fields)]);
     return { outcome, reply, ledgerRow, fields, clarifying };
   });

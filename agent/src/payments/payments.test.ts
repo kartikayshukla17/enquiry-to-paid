@@ -4,7 +4,7 @@ import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import { setKillSwitch } from "../killswitch/index.js";
 import { verifyLedger } from "../ledger/index.js";
 import { withTenant } from "../tenancy/with-tenant.js";
-import { requestPaymentLink } from "./issue.js";
+import { issuePaymentLinkInTxn, requestPaymentLink } from "./issue.js";
 import { razorpaySim } from "./razorpay-sim.js";
 import { handleWebhook } from "./webhook.js";
 import { ask, NOW, paidEvent, seedTenant, sign, TEST_SECRET } from "./test-helpers.js";
@@ -133,15 +133,80 @@ describe("webhook: the only path to a collected entry", () => {
     expect((await state("wh-3")).collected).toHaveLength(1);
   });
 
-  it("a different event id for an already-collected payment is flagged, not collected twice", async () => {
+  const ledgerCount = async () => ((await db.pool.query("SELECT count(*)::int AS n FROM ledger_entries WHERE tenant_id=$1", [T1.id])).rows[0] as { n: number }).n;
+
+  it("idempotency keys on the signed content, not on the unsigned event-id header: the same body+signature resent with fresh event ids N times adds nothing", async () => {
     const { total, linkId } = await quoted("wh-4");
     const a = paidEvent({ linkId, tenantId: T1.id, amount: total, eventId: "evt_wh_4a" });
-    const b = paidEvent({ linkId, tenantId: T1.id, amount: total, eventId: "evt_wh_4b" });
-    await handleWebhook(deps(), a.body, a.headers, NOW);
-    expect(await handleWebhook(deps(), b.body, b.headers, NOW)).toMatchObject({ status: "mismatch", reason: "already_collected" });
+    expect((await handleWebhook(deps(), a.body, a.headers, NOW)).status).toBe("collected");
+    const before = await ledgerCount();
+    for (let i = 0; i < 5; i++) {
+      expect(await handleWebhook(deps(), a.body, { ...a.headers, "x-razorpay-event-id": `evt_wh_4_fresh_${i}` }, NOW)).toEqual({ status: "duplicate" });
+    }
+    expect(await ledgerCount()).toBe(before);
     const s = await state("wh-4");
     expect(s.collected).toHaveLength(1);
-    expect(s.mismatch).toHaveLength(1);
+    expect(s.mismatch).toEqual([]);
+  });
+
+  it("a signed amount-mismatch body resent with fresh event ids is flagged once, not once per resend", async () => {
+    const { total, linkId } = await quoted("wh-4m");
+    const bad = paidEvent({ linkId, tenantId: T1.id, amount: total - 5, eventId: "evt_wh_4m" });
+    expect((await handleWebhook(deps(), bad.body, bad.headers, NOW)).status).toBe("mismatch");
+    for (let i = 0; i < 3; i++) expect((await handleWebhook(deps(), bad.body, { ...bad.headers, "x-razorpay-event-id": `evt_wh_4m_${i}` }, NOW)).status).toBe("duplicate");
+    expect((await state("wh-4m")).mismatch).toHaveLength(1);
+  });
+
+  it("a second, differently signed paid event for an already-collected payment is a duplicate with no ledger write", async () => {
+    const { total, linkId } = await quoted("wh-4c");
+    const a = paidEvent({ linkId, tenantId: T1.id, amount: total, eventId: "evt_wh_4c", paymentId: "pay_sim_A" });
+    const b = paidEvent({ linkId, tenantId: T1.id, amount: total, eventId: "evt_wh_4c2", paymentId: "pay_sim_B" });
+    await handleWebhook(deps(), a.body, a.headers, NOW);
+    const before = await ledgerCount();
+    expect(await handleWebhook(deps(), b.body, b.headers, NOW)).toEqual({ status: "duplicate" });
+    expect(await ledgerCount()).toBe(before);
+  });
+
+  it("two identical signed deliveries at once: exactly one collected entry, one collected + one duplicate, no stray mismatch rows", async () => {
+    const { total, linkId } = await quoted("wh-conc");
+    const ev = paidEvent({ linkId, tenantId: T1.id, amount: total, eventId: "evt_wh_conc" });
+    const results = await Promise.all([handleWebhook(deps(), ev.body, ev.headers, NOW), handleWebhook(deps(), ev.body, ev.headers, NOW)]);
+    expect(results.map((r) => r.status).sort()).toEqual(["collected", "duplicate"]);
+    const s = await state("wh-conc");
+    expect(s.collected).toHaveLength(1);
+    expect(s.mismatch).toEqual([]);
+  });
+
+  it("amounts above 2^31-1 minor units are handled exactly", async () => {
+    const card = await seedTenant(db.pool, kernel, T1);
+    await ask(db.pool, kernel, undefined, T1, card, "wh-big");
+    const big = 3_000_000_000;
+    const issued = await withTenant(db.pool, T1.id, (c) => issuePaymentLinkInTxn(c, kernel, provider, { tenantId: T1.id, threadId: "wh-big", quote: { seq: 3_000_000_001, amountMinor: big, currency: "INR" }, now: NOW }));
+    expect(issued.ok).toBe(true);
+    const linkId = (await withTenant(db.pool, T1.id, (c) => c.query("SELECT provider_link_id FROM payments WHERE thread_id='wh-big'"))).rows[0].provider_link_id as string;
+    const ev = paidEvent({ linkId, tenantId: T1.id, amount: big, eventId: "evt_wh_big" });
+    expect((await handleWebhook(deps(), ev.body, ev.headers, NOW)).status).toBe("collected");
+    expect((await state("wh-big")).collected[0].payload).toMatchObject({ amountMinor: big, quoteSeq: 3_000_000_001 });
+  });
+
+  it("a validly signed event naming a nonexistent tenant is ignored, not an FK error", async () => {
+    const ev = paidEvent({ linkId: "pl_x", tenantId: "tenant-does-not-exist", amount: 100, eventId: "evt_wh_nt" });
+    expect(await handleWebhook(deps(), ev.body, ev.headers, NOW)).toEqual({ status: "ignored", reason: "unknown_link" });
+  });
+
+  it("a collected thread is terminal: a follow-up message neither resets it to quoted nor issues a new quote or link", async () => {
+    const { total, linkId } = await quoted("wh-term");
+    const ev = paidEvent({ linkId, tenantId: T1.id, amount: total, eventId: "evt_wh_term" });
+    await handleWebhook(deps(), ev.body, ev.headers, NOW);
+    const card = await seedTenant(db.pool, kernel, T1);
+    const count = (type: string) => withTenant(db.pool, T1.id, async (c) => (await c.query("SELECT count(*)::int AS n FROM ledger_entries WHERE thread_id='wh-term' AND type=$1", [type])).rows[0].n as number);
+    const [q0, l0] = [await count("quote"), await count("payment_link")];
+    const res = await ask(db.pool, kernel, provider, T1, card, "wh-term", "2026-11-07T11:00:00Z");
+    expect(res.outcome.kind).toBe("refusal");
+    expect(res.reply).not.toContain("rzp.sim.invalid");
+    expect((await state("wh-term")).thread).toBe("collected");
+    expect([await count("quote"), await count("payment_link")]).toEqual([q0, l0]);
+    expect((await withTenant(db.pool, T1.id, (c) => c.query("SELECT 1 FROM payments WHERE thread_id='wh-term'"))).rowCount).toBe(1);
   });
 
   it("wrong amount or currency: flagged as a mismatch (ledger entry), no collected entry, thread stays quoted", async () => {

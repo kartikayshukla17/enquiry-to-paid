@@ -48,7 +48,7 @@ export function razorpaySim(cfg: RazorpaySimConfig): PaymentProvider {
       const tenantId = typeof link?.notes?.tenant_id === "string" ? link.notes.tenant_id : undefined;
       if (o.event !== "payment_link.paid") return { kind: "other", eventId, ...(tenantId && { tenantId }), type: o.event };
       const payId = o.payload?.payment?.entity?.id;
-      if (!link || typeof link.id !== "string" || !tenantId || typeof payId !== "string" || !Number.isInteger(link.amount) || typeof link.currency !== "string") return null;
+      if (!link || typeof link.id !== "string" || !tenantId || typeof payId !== "string" || !Number.isSafeInteger(link.amount) || typeof link.currency !== "string") return null;
       return { kind: "paid", eventId, tenantId, providerLinkId: link.id, providerPaymentId: payId, amountMinor: link.amount as number, currency: link.currency };
     },
   };
