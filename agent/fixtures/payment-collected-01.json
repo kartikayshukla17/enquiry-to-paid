@@ -1,0 +1,17 @@
+{
+  "id": "payment-collected-01",
+  "comment": "FICTIONAL. Simulated Razorpay: the quote reply carries a payment link; a simulated, correctly signed webhook flips the thread to collected; `pnpm ledger proof` then prints the billable chain.",
+  "tenant": { "id": "tenant-rose-court", "name": "FICTIONAL: Rose Court Banquets" },
+  "rateCard": "rate-cards/fictional-banquet.json",
+  "now": "2026-11-07T10:00:00Z",
+  "customerRef": "fixture-customer-pay1",
+  "availability": { "blockedDates": [] },
+  "payments": "razorpay-sim",
+  "messages": [
+    {
+      "text": "Hi, 120 guests on 12 December 2026 for an engagement. Quote please?",
+      "extracted": { "service": "banquet", "date": "2026-12-12", "guestCount": 120, "language": "en", "confidenceBps": 9200 }
+    },
+    { "pay": true, "now": "2026-11-07T10:20:00Z" }
+  ]
+}

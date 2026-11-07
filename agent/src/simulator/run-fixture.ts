@@ -18,6 +18,9 @@ import { loadCardSource } from "../ratecard/source.js";
 import { publishDraft } from "../ratecard/store.js";
 import { legacyOwner } from "../ratecard/legacy.js";
 import { setKillSwitch } from "../killswitch/index.js";
+import { DEMO_WEBHOOK_SECRET, razorpaySim } from "../payments/razorpay-sim.js";
+import { handleWebhook, type WebhookResult } from "../payments/webhook.js";
+import { createHmac } from "node:crypto";
 
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const AGENT_ROOT = path.join(REPO_ROOT, "agent");
@@ -42,6 +45,8 @@ interface Fixture {
   messages?: FixtureMessage[];
   /** Use the native Postgres availability provider: quotes place a 48h hold and taken dates refuse. */
   holds?: boolean;
+  /** `razorpay-sim`: quote replies carry a simulated payment link, and `{ pay: true }` steps deliver a signed paid webhook. */
+  payments?: "razorpay-sim";
 }
 
 /**
@@ -49,9 +54,10 @@ interface Fixture {
  * injected clock for that step). `{ tick: true, now }` runs the due timers instead of sending a message.
  */
 type FixtureMessage =
-  | { tick: true; now: string; killSwitch?: undefined }
-  | { killSwitch: "on" | "off"; scope?: "tenant" | "global"; now: string; tick?: undefined }
-  | { killSwitch?: undefined; tick?: false; text: string; extracted?: Partial<ExtractedFields>; customerRef?: string; now?: string };
+  | { tick: true; now: string; killSwitch?: undefined; pay?: undefined }
+  | { killSwitch: "on" | "off"; scope?: "tenant" | "global"; now: string; tick?: undefined; pay?: undefined }
+  | { pay: true; now: string; killSwitch?: undefined; tick?: undefined }
+  | { killSwitch?: undefined; pay?: undefined; tick?: false; text: string; extracted?: Partial<ExtractedFields>; customerRef?: string; now?: string };
 
 export interface RunResult {
   reply: string;
@@ -59,9 +65,11 @@ export interface RunResult {
   fields: ExtractedFields & { date: string; guestCount: number };
   ledgerRow: LedgerRow;
   /** One entry per message processed, in order (the top-level fields describe the last). */
-  turns: Omit<RunResult, "turns" | "ticks">[];
+  turns: Omit<RunResult, "turns" | "ticks" | "payments">[];
   /** One entry per `tick` step: what the timer worker did at that clock. */
   ticks?: { at: string; processed: number; expiredHolds: string[] }[];
+  /** One entry per `pay` step: what the webhook handler did with the simulated signed paid event. */
+  payments?: (WebhookResult | { status: "no_link" })[];
 }
 
 export interface RunOptions {
@@ -108,6 +116,8 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
   const selected = opts.only === undefined ? messages : [messages[opts.only]].filter((m) => m !== undefined);
   if (selected.length === 0) throw new Error(`fixture ${fx.id} has no message ${opts.only}`);
 
+  const payments = fx.payments === "razorpay-sim" ? razorpaySim({ webhookSecret: DEMO_WEBHOOK_SECRET }) : undefined;
+  const paid: NonNullable<RunResult["payments"]> = [];
   const turns: RunResult["turns"] = [];
   const ticks: NonNullable<RunResult["ticks"]> = [];
   const availability = fx.holds ? nativeAvailability : undefined;
@@ -118,6 +128,31 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
       const target = m.scope === "global" ? ({ kind: "global" } as const) : ({ kind: "tenant", tenantId: fx.tenant.id } as const);
       const actor = m.scope === "global" ? { operator: "fixture-operator" } : { memberId: legacyOwner(fx.tenant.id) };
       await setKillSwitch({ pool: opts.pool, kernel }, { target, on: m.killSwitch === "on", actor, now: m.now });
+      continue;
+    }
+    if (m.pay) {
+      // The simulated provider "pays" the tenant's newest unpaid link: a Razorpay-shaped event, signed with the demo secret.
+      const row = (
+        await opts.pool.query<{ tenant_id: string; provider_link_id: string; amount_minor: number; currency: string }>(
+          `SELECT tenant_id, provider_link_id, amount_minor::int AS amount_minor, currency FROM payments
+            WHERE tenant_id=$1 AND status='created' ORDER BY created_at DESC, quote_ledger_seq DESC LIMIT 1`,
+          [fx.tenant.id],
+        )
+      ).rows[0];
+      if (!payments || !row) {
+        paid.push({ status: "no_link" });
+        continue;
+      }
+      const body = JSON.stringify({
+        entity: "event",
+        event: "payment_link.paid",
+        payload: {
+          payment_link: { entity: { id: row.provider_link_id, amount: row.amount_minor, currency: row.currency, notes: { tenant_id: row.tenant_id } } },
+          payment: { entity: { id: `pay_sim_${paid.length + 1}`, amount: row.amount_minor, currency: row.currency } },
+        },
+      });
+      const headers = { "x-razorpay-signature": createHmac("sha256", DEMO_WEBHOOK_SECRET).update(body).digest("hex"), "x-razorpay-event-id": `evt_sim_${fx.id}_${paid.length + 1}` };
+      paid.push(await handleWebhook({ pool: opts.pool, kernel, payments }, body, headers, m.now));
       continue;
     }
     if (m.tick) {
@@ -139,12 +174,12 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
     let res;
     if (m.extracted === undefined) {
       llm ??= createProvider();
-      res = await handleMessage({ pool: opts.pool, kernel, notifier, llm, wordReplies: opts.wordReplies ?? process.env.LLM_WORD_REPLIES === "1", ...(availability && { availability }) }, input);
+      res = await handleMessage({ pool: opts.pool, kernel, notifier, llm, wordReplies: opts.wordReplies ?? process.env.LLM_WORD_REPLIES === "1", ...(availability && { availability }), ...(payments && { payments }) }, input);
     } else {
-      res = await handleEnquiry({ pool: opts.pool, kernel, notifier, ...(availability && { availability }) }, { ...input, fields: { ...m.extracted, ...opts.overrideFields } });
+      res = await handleEnquiry({ pool: opts.pool, kernel, notifier, ...(availability && { availability }), ...(payments && { payments }) }, { ...input, fields: { ...m.extracted, ...opts.overrideFields } });
     }
     turns.push({ reply: res.reply, quote: res.outcome, fields: res.fields as RunResult["fields"], ledgerRow: res.ledgerRow });
   }
-  const last = turns[turns.length - 1] as Omit<RunResult, "turns" | "ticks">;
-  return { ...last, turns, ...(ticks.length > 0 && { ticks }) };
+  const last = turns[turns.length - 1] as Omit<RunResult, "turns" | "ticks" | "payments">;
+  return { ...last, turns, ...(ticks.length > 0 && { ticks }), ...(paid.length > 0 && { payments: paid }) };
 }
