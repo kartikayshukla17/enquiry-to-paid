@@ -7,7 +7,7 @@ export interface OwnerOutgoing {
   tenantId: string;
   toMemberId: string;
   role: MemberRole;
-  kind: "escalation" | "digest";
+  kind: "escalation" | "digest" | "customer_message";
   text: string;
   at: string;
 }

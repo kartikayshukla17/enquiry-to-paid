@@ -1,12 +1,15 @@
 import type { Pool, PoolClient } from "pg";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import { GENESIS_HASH, appendEntry } from "../ledger/index.js";
+import { idleResumeInTxn } from "../owner/takeover.js";
 import { APP_ROLE } from "../tenancy/with-tenant.js";
 
 export interface RunResult {
   /** Timers claimed and completed by this call. */
   processed: number;
   expiredHolds: string[];
+  /** Threads the owner-idle timer handed back to the agent (T18). */
+  resumedThreads: string[];
 }
 
 interface DueTimer {
@@ -27,7 +30,7 @@ interface DueTimer {
  */
 export async function runDueTimers(pool: Pool, now: string, opts: { kernel?: KernelBridge } = {}): Promise<RunResult> {
   const kernel = opts.kernel ?? (await loadKernel());
-  const result: RunResult = { processed: 0, expiredHolds: [] };
+  const result: RunResult = { processed: 0, expiredHolds: [], resumedThreads: [] };
   for (;;) {
     const client = await pool.connect();
     try {
@@ -46,14 +49,25 @@ export async function runDueTimers(pool: Pool, now: string, opts: { kernel?: Ker
       }
       await client.query(`SET LOCAL ROLE ${APP_ROLE}`);
       await client.query("SELECT set_config('app.tenant_id', $1, true)", [due.tenant_id]);
-      // Same lock order as the pipeline (ledger head first, then hold rows) so the two can never deadlock.
-      await client.query(
-        "INSERT INTO ledger_heads (tenant_id, last_tenant_seq, last_hash) VALUES ($1, 0, $2) ON CONFLICT (tenant_id) DO NOTHING",
-        [due.tenant_id, GENESIS_HASH],
-      );
-      await client.query("SELECT 1 FROM ledger_heads WHERE tenant_id=$1 FOR UPDATE", [due.tenant_id]);
-      const expired = await runTimer(client, kernel, due, now);
-      await client.query(`UPDATE timers SET status='done', done_at=$2::timestamptz, attempts = attempts + 1 WHERE id=$1`, [due.id, now]);
+      let expired: string | undefined;
+      let retryAt: string | undefined;
+      if (due.kind === "owner_idle_resume") {
+        // The pipeline and the owner handlers lock thread -> ledger head, so this kind locks the thread first too (the timer row
+        // is already ours); the up-front head lock below would invert that order and deadlock against a customer message.
+        const r = await idleResumeInTxn(client, kernel, { tenantId: due.tenant_id, threadId: due.subject_id, now });
+        if (r.resumed) result.resumedThreads.push(due.subject_id);
+        else retryAt = r.retryAt;
+      } else {
+        // Same lock order as the pipeline (ledger head first, then hold rows) so the two can never deadlock.
+        await client.query(
+          "INSERT INTO ledger_heads (tenant_id, last_tenant_seq, last_hash) VALUES ($1, 0, $2) ON CONFLICT (tenant_id) DO NOTHING",
+          [due.tenant_id, GENESIS_HASH],
+        );
+        await client.query("SELECT 1 FROM ledger_heads WHERE tenant_id=$1 FOR UPDATE", [due.tenant_id]);
+        expired = await runTimer(client, kernel, due, now);
+      }
+      if (retryAt) await client.query(`UPDATE timers SET run_at=$2::timestamptz, attempts = attempts + 1 WHERE id=$1`, [due.id, retryAt]);
+      else await client.query(`UPDATE timers SET status='done', done_at=$2::timestamptz, attempts = attempts + 1 WHERE id=$1`, [due.id, now]);
       await client.query("COMMIT");
       result.processed += 1;
       if (expired) result.expiredHolds.push(expired);

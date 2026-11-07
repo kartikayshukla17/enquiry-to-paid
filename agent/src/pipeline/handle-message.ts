@@ -5,12 +5,13 @@ import type { KernelBridge } from "../kernel/index.js";
 import type { Notifier } from "../escalation/index.js";
 import type { LlmProvider } from "../llm/types.js";
 import { makeReplyWorder } from "../llm/word-reply.js";
+import type { OwnerOutbox } from "../owner/types.js";
 import type { PiiKeys } from "../security/pii.js";
 import type { PaymentProvider } from "../payments/types.js";
 import type { ProviderRegistry } from "../payments/registry.js";
 import { readKillSwitch } from "../killswitch/index.js";
 import { withTenant } from "../tenancy/with-tenant.js";
-import { handleEnquiry, type EnquiryInput, type EnquiryResult, type Provenance } from "./handle-enquiry.js";
+import { PauseRaced, handleEnquiry, type EnquiryInput, type EnquiryResult, type Provenance } from "./handle-enquiry.js";
 
 export interface MessageDeps {
   pool: Pool;
@@ -27,6 +28,8 @@ export interface MessageDeps {
   payments?: PaymentProvider;
   /** Per-tenant provider selection (T16): takes precedence over `payments` when set. */
   paymentProviders?: ProviderRegistry;
+  /** Where a customer message on a thread paused for the owner is shown to them (T18). */
+  ownerOutbox?: OwnerOutbox;
 }
 
 const UNKNOWN: Omit<Provenance, "costMinor"> = { modelId: "unknown", provider: "unknown", region: "unknown" };
@@ -38,8 +41,21 @@ const UNKNOWN: Omit<Provenance, "costMinor"> = { modelId: "unknown", provider: "
  */
 export async function handleMessage(
   deps: MessageDeps,
-  e: Omit<EnquiryInput, "fields" | "provenance" | "extractionFailure">,
+  e: Omit<EnquiryInput, "fields" | "provenance" | "extractionFailure" | "pausedSeen">,
 ): Promise<EnquiryResult> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await handleOnce(deps, e);
+    } catch (err) {
+      // The thread was handed back between the pause check and the lock: look again.
+      if (!(err instanceof PauseRaced) || attempt >= 2) throw err;
+    }
+  }
+}
+
+async function handleOnce(deps: MessageDeps, e: Omit<EnquiryInput, "fields" | "provenance" | "extractionFailure" | "pausedSeen">): Promise<EnquiryResult> {
+  // A thread paused for the owner (T18) comes first: the text is stored and shown to the owner, no LLM sees it, nothing is sent back.
+  const paused = await withTenant(deps.pool, e.tenant.id, async (c) => (await c.query("SELECT 1 FROM threads WHERE id=$1 AND state='paused_owner'", [e.threadId])).rowCount === 1);
   // The very first thing: if the kill switch is on, the customer text goes nowhere (no extraction, no LLM call).
   const ks = await withTenant(deps.pool, e.tenant.id, (c) => readKillSwitch(c, e.tenant.id)); // a failed read throws: fail closed, never fail open
   const inner = {
@@ -47,12 +63,14 @@ export async function handleMessage(
     kernel: deps.kernel,
     notifier: deps.notifier,
     ...(deps.pii && { pii: deps.pii }),
+    ...(deps.ownerOutbox && { ownerOutbox: deps.ownerOutbox }),
     ...(deps.availability && { availability: deps.availability }),
     ...(deps.payments && { payments: deps.payments }),
     ...(deps.paymentProviders && { paymentProviders: deps.paymentProviders }),
     ...(deps.lowConfidenceBps !== undefined && { lowConfidenceBps: deps.lowConfidenceBps }),
     ...(deps.wordReplies && { worder: makeReplyWorder(deps.llm) }),
   };
+  if (paused) return handleEnquiry(inner, { ...e, fields: {}, pausedSeen: true });
   if (ks.on) {
     return handleEnquiry(inner, { ...e, fields: {}, killSwitchSeen: { scope: ks.scope } });
   }

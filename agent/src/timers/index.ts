@@ -1,6 +1,6 @@
 import type { Tx } from "../availability/types.js";
 
-export type TimerKind = "hold_expiry";
+export type TimerKind = "hold_expiry" | "owner_idle_resume";
 
 /**
  * Schedules a durable timer: a row in Postgres, written in the caller's transaction, so a hold and its

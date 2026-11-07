@@ -73,7 +73,7 @@ type FixtureMessage =
 
 /** One line of the simulated owner WhatsApp thread, in order. */
 export type OwnerLine =
-  | { dir: "to_owner"; kind: "escalation" | "digest" | "reply"; to: string; text: string; at: string }
+  | { dir: "to_owner"; kind: "escalation" | "digest" | "customer_message" | "reply"; to: string; text: string; at: string }
   | { dir: "from_owner"; from: string; text: string; at: string }
   | { dir: "to_customer"; threadId: string; text: string; at: string };
 
@@ -139,7 +139,7 @@ export async function runFixture(fixturePath: string, opts: RunOptions): Promise
   const transcript: OwnerLine[] = [];
   if (fx.owners) await seedOwnerMembers(opts.pool, fx.tenant.id, fx.owners);
   const ownerOutbox = {
-    send: (m: { role: string; kind: "escalation" | "digest"; text: string; at: string }) => {
+    send: (m: { role: string; kind: "escalation" | "digest" | "customer_message"; text: string; at: string }) => {
       transcript.push({ dir: "to_owner", kind: m.kind, to: m.role, text: m.text, at: m.at });
       return Promise.resolve();
     },

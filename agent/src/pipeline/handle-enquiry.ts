@@ -1,4 +1,7 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
+import { pushRecipients, type Member } from "../owner/members.js";
+import { threadRef } from "../owner/takeover.js";
+import type { OwnerOutbox } from "../owner/types.js";
 import type { KernelBridge } from "../kernel/index.js";
 import { KernelError, NEGOTIATION_INTENTS, type Availability, type ExtractedFields, type Outcome, type TurnOutcome } from "../kernel/types.js";
 import type { Notifier } from "../escalation/index.js";
@@ -34,6 +37,15 @@ export interface EnquiryInput {
   extractionFailure?: { code: string; detail: string };
   /** handleMessage saw the kill switch on before extraction (so no LLM ran). Conservative: stays on even if flipped off since. */
   killSwitchSeen?: { scope: KillScope };
+  /** handleMessage saw the thread paused for the owner before extraction (so no LLM ran). If it is no longer paused under the lock, `PauseRaced` is thrown and the caller starts over. */
+  pausedSeen?: true;
+}
+
+/** Thrown by handleEnquiry when the caller skipped extraction for a paused thread that was handed back in the meantime. */
+export class PauseRaced extends Error {
+  constructor() {
+    super("thread was handed back to the agent after the pause was observed");
+  }
 }
 
 export interface Provenance {
@@ -61,6 +73,8 @@ export interface EnquiryResult {
   ledgerRow: LedgerRow;
   /** The thread's accumulated fields after merging this message. */
   fields: ExtractedFields;
+  /** The thread is paused for the owner (T18): the customer message was stored and shown to the owner; `reply` is empty and nothing may be sent. */
+  held?: true;
 }
 
 /** Thrown inside the decision transaction (which then rolls back, leaving no trace) when the reply needs LLM wording. */
@@ -103,6 +117,12 @@ export async function handleEnquiry(
     }
   }
   const { outcome, reply, ledgerRow, fields, clarifying } = decided;
+  if (decided.surface) {
+    // After commit, like escalations: the message is already durable when the owner is told.
+    const sv = decided.surface;
+    if (deps.ownerOutbox) for (const m of sv.to) await deps.ownerOutbox.send({ tenantId: e.tenant.id, toMemberId: m.id, role: m.role, kind: "customer_message", text: sv.text, at: e.now });
+    return { reply: "", outcome, ledgerRow, fields, held: true };
+  }
   // After commit: the refusal is durable before anyone is told about it.
   if (outcome.kind === "refusal" && !clarifying) {
     await deps.notifier.notify({
@@ -124,9 +144,26 @@ interface Decision {
   ledgerRow: LedgerRow;
   fields: ExtractedFields;
   clarifying: boolean;
+  surface?: { to: Member[]; text: string };
 }
 
-type Deps = { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider; payments?: PaymentProvider; paymentProviders?: ProviderRegistry };
+type Deps = { ownerOutbox?: OwnerOutbox; pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider; payments?: PaymentProvider; paymentProviders?: ProviderRegistry };
+
+/**
+ * Thread paused for the owner (T18): the customer's text is stored on the ledger (marked `heldForOwner`) and shown to every
+ * owner and manager; nothing is extracted, priced, held or sent, whatever the kill switch says. Runs under the thread lock.
+ */
+async function holdForOwner(client: PoolClient, kernel: KernelBridge, e: EnquiryInput, fields: ExtractedFields): Promise<Decision> {
+  const base = { tenantId: e.tenant.id, threadId: e.threadId, at: e.now };
+  const ledgerRow = await appendEntry(client, kernel, { ...base, type: "enquiry", payload: { text: e.message, heldForOwner: true } });
+  const to = await pushRecipients(client, e.tenant.id);
+  const ref = await threadRef(client, e.tenant.id, e.threadId);
+  const label = ref ?? "a conversation";
+  const text = [`[${label}] The customer wrote while you have this conversation:`, `"${e.message}"`, ref ? `Reply: reply ${ref} <message> / handback ${ref}` : "Say handback to give it back to the agent."].join("\n");
+  await appendEntry(client, kernel, { ...base, type: "owner_message", payload: { command: "customer_message_surfaced", ref: ref ?? null, to: to.map((m) => m.id), enquirySeq: ledgerRow.seq } });
+  const outcome: TurnOutcome = { kind: "refusal", reason: "out_of_policy", ruleGap: "thread_paused_owner" };
+  return { outcome, reply: "", ledgerRow, fields: fields ?? { language: "unknown", confidenceBps: 0 }, clarifying: false, surface: { to, text } };
+}
 
 async function decide(
   deps: Deps,
@@ -150,6 +187,8 @@ async function decide(
     );
     // Lock the thread row so concurrent messages merge in order; later fields override earlier ones.
     const stored = (await client.query<{ fields: Record<string, unknown>; state: string }>("SELECT fields, state FROM threads WHERE id = $1 FOR UPDATE", [e.threadId])).rows[0];
+    if (stored?.state === "paused_owner") return holdForOwner(client, deps.kernel, e, stored.fields as unknown as ExtractedFields);
+    if (e.pausedSeen) throw new PauseRaced();
     // The intent is a per-message classification: it never merges into (or is read back from) the thread.
     const { intent, ...messageFields } = e.fields;
     const isBotQuestion = intent === "asks_if_bot";

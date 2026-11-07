@@ -13,6 +13,7 @@ import { parseOwnerReply } from "./parse.js";
 import { listOpenRefusals, type OpenRefusal } from "./queue.js";
 import { declineMessage, HELP_TEXT, ownerQuoteMessage } from "./templates.js";
 import type { CustomerMessage } from "./types.js";
+import { handbackInTxn, ownerReplyInTxn } from "./takeover.js";
 import { explain } from "./why.js";
 import { describeReason } from "../escalation/index.js";
 
@@ -64,6 +65,9 @@ export async function handleOwnerMessage(deps: { pool: Pool; kernel?: KernelBrid
     if (cmd.kind === "why") return say(await explain(c, tenant.id, cmd.ref), { command: "why", ...(cmd.ref && { ref: cmd.ref }) });
     if (!WRITE_ROLES.has(member.role)) return say("Sorry, only the owner or a manager can do that. You can ask me for the digest or say why with a ref from an escalation message.", { command: cmd.kind, denied: true, role: member.role });
 
+    const ctx = { tenant, member, now, opsThreadId: threadId };
+    if (cmd.kind === "reply") return ownerReplyInTxn(c, kernel, ctx, cmd);
+    if (cmd.kind === "handback") return handbackInTxn(c, kernel, ctx, cmd);
     const picked = await pick(c, tenant.id, cmd.ref);
     if (!picked.ok) return say(picked.reply, { command: cmd.kind, rejected: picked.code, ...(cmd.ref && { ref: cmd.ref }) });
     return act(c, kernel, { tenant, member, now, text: input.text.trim(), opsThreadId: threadId }, cmd, picked.item);
@@ -111,7 +115,7 @@ async function act(
   c: PoolClient,
   kernel: KernelBridge,
   ctx: { tenant: { id: string; name: string }; member: Member; now: string; text: string; opsThreadId: string },
-  cmd: Exclude<ReturnType<typeof parseOwnerReply>, undefined | { kind: "usage" } | { kind: "digest" } | { kind: "why" }>,
+  cmd: Exclude<ReturnType<typeof parseOwnerReply>, undefined | { kind: "usage" } | { kind: "digest" } | { kind: "why" } | { kind: "reply" } | { kind: "handback" }>,
   item: OpenRefusal,
 ): Promise<OwnerMessageResult> {
   const { tenant, member, now, text } = ctx;
