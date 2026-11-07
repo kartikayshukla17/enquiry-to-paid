@@ -377,15 +377,19 @@ const STOP_WORDS: [string, string][] = [
   ["devanagari", "मुझे मैसेज भेजना बंद करो"], ["devanagari", "ये सब बंद करो अब"], ["devanagari", "कृपया मुझे बार बार मत भेजो"],
   ["english", "Not interested, stop messaging me"], ["english", "Not interested. Unsubscribe me"], ["english", "I don't want this, stop sending"], ["english", "I did not ask for this, stop sending"],
   ["english", "I don't want this\nstop sending"],
+  ["english", "Not interested \u2014 stop messaging me"], ["english", "Not interested \u2013 stop messaging me"], ["english", "Not interested - unsubscribe me"], ["english", "Not interested / stop sending"],
+  ["english", "not interested unsubscribe me"], ["english", "Not interested \u2014 unsubscribe me"], ["english", "not interested stop messaging me"],
+  // Ruling: no negation guard on unsubscribe / opt out; reading "I won't unsubscribe" as a stop is the safe direction.
+  ["english", "I will not unsubscribe, send the quote again"], ["english", "I did not unsubscribe, why was I removed"], ["english", "please don't opt out the team"],
   ["devanagari", "रुको"], ["devanagari", "रुको!"], ["devanagari", "रुको।"], ["devanagari", "मत भेजो"], ["devanagari", "मत भेजो।"], ["devanagari", "मैसेज मत भेजो"], ["devanagari", "मत भेजना"], ["devanagari", "बस करो"],
 ];
 /** Messages that mention stopping but are conversation about the quote, not a request to be unsubscribed. */
 const NOT_STOP = [
-  "don't stop now", "please don't stop the quote", "can you stop by tomorrow to discuss the 12th", "I will not unsubscribe, send the quote again",
+  "don't stop now", "please don't stop the quote", "can you stop by tomorrow to discuss the 12th",
   "Stop. Can we do the 20th instead, with 200 guests?", "stopover hotel for the guests?", "ruko main date check karta hoon", "ruko, kal baat karte hain", "रुको मैं तारीख देखता हूँ",
   "band karo mat, pehle rate batao please", "yes", "ok thanks",
   "don't stop messaging", "do not stop sending", "please don't stop now", "please don't stop messaging me",
-  "do not stop sending the quote", "never stop messaging me with offers", "mat roko", "I did not unsubscribe, why was I removed", "please don't opt out the team",
+  "do not stop sending the quote", "never stop messaging me with offers", "mat roko", "Don\u2019t stop messaging me", "please don't stop sending reminders",
 ];
 
 describe("stop words", () => {

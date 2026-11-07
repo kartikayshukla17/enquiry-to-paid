@@ -41,27 +41,31 @@ const MAX_WORDS_AFTER_STOP_PHRASE = 3;
 
 /**
  * Contains-anywhere pass: a missed stop is the dangerous side, so unambiguous stems count wherever they sit in the message.
- * Stems that are not themselves negative ("unsubscribe", "stop sending") are voided by a negation in the one or two words directly before
- * them, within the same clause ("I will not unsubscribe", "don't stop sending the quote"). Stems that are a request ("don't message me") need no guard.
+ * Ruling: the only negation guard is on the "stop <verb>" stems, and it applies only when a negation attaches directly to "stop"
+ * ("don't stop sending", "do not stop messaging", "never stop texting"). "unsubscribe", "opt out" and the Hinglish/Devanagari
+ * request forms have NO guard: reading "I won't unsubscribe" as a stop is the safe direction. Stems that are a request
+ * ("don't message me") need no guard either.
  */
-const STEMS_NEEDING_GUARD = words([
-  "unsubscribe", "opt out", "optout", "stopall",
-  ...["sending", "messaging", "texting", "reminders", "bothering", "contacting"].map((w) => `stop ${w}`),
-]);
 const STEMS_UNGUARDED = words([
+  "unsubscribe", "opt out", "optout", "stopall",
   "no more messages", "no more message", "i said stop", "bhejna band", "mat bhejo", "बंद करो", "बन्द करो", "मत भेजो", "भेजना बंद", "भेजना बन्द",
   ...["don t", "dont", "do not", "never"].flatMap((neg) => ["message", "contact", "text"].map((v) => `${neg} ${v} me`)),
 ]);
-const NEGATIONS = new Set(["not", "never", "dont", "don", "doesn", "won", "wont", "cant", "didn", "without"]);
+const STEMS_STOP_VERB = words(["sending", "messaging", "texting", "reminders", "bothering", "contacting"].map((w) => `stop ${w}`));
+/** A negation attached to the token right before "stop": one token ("never", "dont", "cannot") or two ("don t", "do not", "can t"). */
+const NEGATION_1 = new Set(["never", "dont", "cannot", "cant"]);
+const NEGATION_2 = [["don", "t"], ["do", "not"], ["can", "t"], ["can", "not"]];
+const negatedAt = (tokens: string[], i: number) =>
+  (i >= 1 && NEGATION_1.has(tokens[i - 1]!)) || (i >= 2 && NEGATION_2.some(([a, b]) => tokens[i - 2] === a && tokens[i - 1] === b));
 const containsAt = (tokens: string[], phrase: string[], from: number) => phrase.every((w, i) => tokens[from + i] === w);
 const containsAnywhere = (tokens: string[], phrase: string[]) => tokens.some((_, i) => containsAt(tokens, phrase, i));
-/** A guarded stem is voided only by a negation right before it (one or two tokens: "don't stop sending", "do not stop sending"). */
-const NEGATION_WINDOW = 2;
-const containsUnguarded = (tokens: string[], phrase: string[]) =>
-  tokens.some((_, i) => containsAt(tokens, phrase, i) && !tokens.slice(Math.max(0, i - NEGATION_WINDOW), i).some((t) => NEGATIONS.has(t)));
+const containsStopVerb = (tokens: string[], phrase: string[]) => tokens.some((_, i) => containsAt(tokens, phrase, i) && !negatedAt(tokens, i));
 
-/** Clauses are cut on punctuation and line breaks BEFORE punctuation is stripped, so a negation never reaches across them ("Not interested. Unsubscribe me"). */
-const CLAUSE_BREAK = /[.,;:!?\n\r\u2026\u0964\u0965|()[\]{}"\u201C\u201D]+/u;
+/**
+ * Clauses are cut on punctuation, dashes (em, en, spaced hyphen), slash and line breaks BEFORE punctuation is stripped,
+ * so a negation never reaches across them ("Not interested. Unsubscribe me", "Not interested - stop messaging me").
+ */
+const CLAUSE_BREAK = /[.,;:!?\n\r\u2026\u0964\u0965|()[\]{}"\u201C\u201D\u2014\u2013/]+|\s[-\u2010\u2011\u2012]+\s/u;
 const clausesOf = (text: string): string[][] =>
   text.normalize("NFKC").split(CLAUSE_BREAK).map(normalizeText).filter((t) => t.length > 0);
 
@@ -73,7 +77,7 @@ function isStopRequest(text: string): boolean {
   if (STOP_WHOLE_MESSAGE_ONLY.some((p) => tokens.length === p.length && startsWith(tokens, p))) return true;
   if (STOP_PHRASES.some((p) => startsWith(tokens, p) && tokens.length - p.length <= MAX_WORDS_AFTER_STOP_PHRASE)) return true;
   if (tokens.length === 1 && tokens[0] === "quit") return true;
-  return clausesOf(text).some((clause) => STEMS_UNGUARDED.some((p) => containsAnywhere(clause, p)) || STEMS_NEEDING_GUARD.some((p) => containsUnguarded(clause, p)));
+  return clausesOf(text).some((clause) => STEMS_UNGUARDED.some((p) => containsAnywhere(clause, p)) || STEMS_STOP_VERB.some((p) => containsStopVerb(clause, p)));
 }
 
 export function classifyCustomerText(text: string): ConsentWord | undefined {
