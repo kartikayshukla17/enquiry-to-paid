@@ -1,9 +1,11 @@
 import { createServer } from "node:http";
+import { readdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { DEFAULT_DATABASE_URL } from "../ledger/test-db.js";
 import { migrate } from "../ledger/migrate.js";
 import { runChat } from "./chat.js";
+import { REPO_ROOT } from "../ratecard/paths.js";
 
 /**
  * Local-only HTTP seam for the web simulator page: POST /chat {text, customerRef?, tenantId?, card?} -> {reply, ledgerRow}.
@@ -11,12 +13,12 @@ import { runChat } from "./chat.js";
  */
 const PORT = Number(process.env.SIM_WEB_PORT ?? 4010);
 const MAX_BODY = 8 * 1024;
-const CARDS = new Set([
-  "rate-cards/fictional-banquet.json",
-  "rate-cards/fictional-photographer.json",
-  "rate-cards/fictional-b2b-supplier.json",
-  "rate-cards/fictional-contractor.json",
-]);
+// Allowlist = the fictional cards on disk (read from the directory, so no vertical is named here).
+const CARDS = new Set(
+  readdirSync(`${REPO_ROOT}rate-cards`)
+    .filter((f) => /^fictional-.*\.json$/.test(f))
+    .map((f) => `rate-cards/${f}`),
+);
 
 // Demo convenience only (same as `pnpm sim`): throwaway process-local keys when none are configured.
 for (const name of ["PII_ENC_KEY", "PHONE_HASH_KEY"]) {
