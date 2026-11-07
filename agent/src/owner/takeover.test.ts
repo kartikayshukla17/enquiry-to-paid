@@ -7,6 +7,7 @@ import type { LlmProvider } from "../llm/types.js";
 import { handleMessage } from "../pipeline/handle-message.js";
 import { seedTenant } from "../payments/test-helpers.js";
 import { withTenant } from "../tenancy/with-tenant.js";
+import { runDueTimers } from "../timers/run.js";
 import { handleOwnerMessage } from "./handle.js";
 import { seedOwnerMembers } from "./seed.js";
 import { collectingOutbox, type OwnerOutgoing } from "./types.js";
@@ -40,7 +41,7 @@ afterAll(async () => {
   await db.drop();
 });
 
-const at = (hoursAfterT0: number) => new Date(Date.parse(T0) + hoursAfterT0 * 3_600_000).toISOString();
+const at = (hoursAfterT0: number) => new Date(Date.parse(T0) + hoursAfterT0 * 3_600_000).toISOString().replace(".000Z", "Z");
 const deps = () => ({ pool: db.pool, kernel, notifier: collectingNotifier([]), llm, ownerOutbox: collectingOutbox(outbox) });
 const customer = (thread: string, message: string, now = T0) =>
   handleMessage(deps(), { tenant: T, threadId: thread, customerRef: `cust-${thread}`, rateCard: card, now, availability: { blockedDates: [] }, message });
@@ -50,6 +51,7 @@ const state = async (thread: string) => (await rows("SELECT state FROM threads W
 const ledger = (thread: string, type?: string) =>
   rows(`SELECT type, payload, at FROM ledger_entries WHERE thread_id=$1 ${type ? "AND type=$2" : ""} ORDER BY tenant_seq`, type ? [thread, type] : [thread]);
 const cmds = async (thread: string) => (await ledger(thread, "owner_message")).map((r) => r.payload.command as string);
+const refFor = async (thread: string) => `Q${(await rows("SELECT tenant_seq::int AS s FROM ledger_entries WHERE thread_id=$1 AND type='quote' ORDER BY tenant_seq DESC LIMIT 1", [thread]))[0].s}`;
 /** A thread the agent quoted (so Q<n> exists). */
 async function quoted(): Promise<{ thread: string; ref: string }> {
   const thread = `to-${++n}`;
@@ -79,5 +81,91 @@ describe("takeover", () => {
     expect(surfaced.map((m) => m.role).sort()).toEqual(["manager", "owner"]);
     expect(surfaced[0]!.text).toContain("Can you do the 13th instead?");
     expect(surfaced[0]!.text).toContain(ref);
+  });
+});
+
+describe("explicit handback", () => {
+  it("handback returns the thread to the agent, which answers the customer's next message; the ledger says who and when", async () => {
+    const { thread, ref } = await quoted();
+    await owner(OWNER, `reply ${ref} Let me check with the chef.`, at(0));
+    await customer(thread, "any update?", at(1));
+    const h = await owner(MANAGER, `handback ${ref}`, at(2));
+    expect(h.reply).toContain("1 customer message");
+    expect(await state(thread)).toBe("quoted");
+    const row = (await ledger(thread, "owner_message")).filter((r) => r.payload.command === "handback");
+    expect(row).toHaveLength(1);
+    expect(row[0]!.payload).toMatchObject({ by: "owner", role: "manager", ref, resumedTo: "quoted", heldMessages: 1 });
+    expect(new Date(row[0]!.at).getTime()).toBe(Date.parse(at(2)));
+
+    const res = await customer(thread, "so what is the price again?", at(3));
+    expect(res.reply).toContain("Total");
+    expect(res.held).toBeUndefined();
+  });
+
+  it("handback with no ref applies to the only paused thread, says so when nothing is paused, and asks when several are", async () => {
+    for (const t of await rows("SELECT id FROM threads WHERE state='paused_owner'")) await owner(OWNER, `handback ${await refFor(t.id as string)}`);
+    expect((await owner(OWNER, "handback", at(0))).reply).toBe("Nothing is paused.");
+    const a = await quoted(), b = await quoted();
+    await owner(OWNER, `reply ${a.ref} hi`);
+    expect((await owner(OWNER, "handback")).reply).toContain(`Handed ${a.ref} back`);
+    await owner(OWNER, `reply ${a.ref} hi again`);
+    await owner(OWNER, `reply ${b.ref} hello`);
+    const ask = await owner(OWNER, "handback");
+    expect(ask.reply).toContain("More than one");
+    expect(await state(a.thread)).toBe("paused_owner");
+    expect(await state(b.thread)).toBe("paused_owner");
+  });
+
+  it("a second handback does nothing (and a timer scheduled before the handback no longer fires a resume)", async () => {
+    const { thread, ref } = await quoted();
+    await owner(OWNER, `reply ${ref} hi`);
+    await owner(OWNER, `handback ${ref}`);
+    const again = await owner(OWNER, `handback ${ref}`);
+    expect(again.reply).toContain("not paused");
+    expect((await cmds(thread)).filter((c) => c === "handback")).toHaveLength(1);
+    await runDueTimers(db.pool, at(48), { kernel });
+    expect((await cmds(thread)).filter((c) => c === "idle_resume")).toHaveLength(0);
+  });
+});
+
+describe("12h idle resume (durable timer, injected clock)", () => {
+  it("resumes exactly 12 hours after the owner's last message, not before; then the agent answers; the ledger says it was the timer", async () => {
+    const { thread, ref } = await quoted();
+    await owner(OWNER, `reply ${ref} One moment please.`, at(0));
+    await customer(thread, "hello?", at(5));
+    expect((await runDueTimers(db.pool, at(11.99), { kernel })).resumedThreads).toEqual([]);
+    expect(await state(thread)).toBe("paused_owner");
+    expect((await customer(thread, "still there?", at(11.99))).reply).toBe("");
+
+    const tick = await runDueTimers(db.pool, at(12), { kernel });
+    expect(tick.resumedThreads).toEqual([thread]);
+    expect(await state(thread)).toBe("quoted");
+    const resume = (await ledger(thread, "owner_message")).filter((r) => r.payload.command === "idle_resume");
+    expect(resume).toHaveLength(1);
+    expect(resume[0]!.payload).toMatchObject({ by: { system: "timer" }, idleHours: 12, lastOwnerMessageAt: at(0).replace("Z", ".000Z"), resumedTo: "quoted", heldMessages: 2 });
+    expect(new Date(resume[0]!.at).getTime()).toBe(Date.parse(at(12)));
+
+    expect((await customer(thread, "price please", at(13))).reply).toContain("Total");
+    expect((await runDueTimers(db.pool, at(30), { kernel })).resumedThreads).toEqual([]);
+    expect((await cmds(thread)).filter((c) => c === "idle_resume")).toHaveLength(1);
+  });
+
+  it("each owner message restarts the 12 hours", async () => {
+    const { thread, ref } = await quoted();
+    await owner(OWNER, `reply ${ref} first`, at(0));
+    await owner(MANAGER, `reply ${ref} second`, at(8));
+    expect((await runDueTimers(db.pool, at(12), { kernel })).resumedThreads).toEqual([]);
+    expect(await state(thread)).toBe("paused_owner");
+    expect((await runDueTimers(db.pool, at(20), { kernel })).resumedThreads).toEqual([thread]);
+    expect((await cmds(thread)).filter((c) => c === "pause")).toHaveLength(1);
+  });
+
+  it("the timer is a durable row, not process memory: it is in Postgres with the due time", async () => {
+    const { thread, ref } = await quoted();
+    await owner(OWNER, `reply ${ref} hi`, at(0));
+    const t = (await db.pool.query("SELECT kind, run_at, status FROM timers WHERE subject_id=$1", [thread])).rows[0];
+    expect(t).toMatchObject({ kind: "owner_idle_resume", status: "pending" });
+    expect(new Date(t.run_at as string).getTime()).toBe(Date.parse(at(12)));
+    await runDueTimers(db.pool, at(12), { kernel });
   });
 });
