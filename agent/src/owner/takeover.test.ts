@@ -134,9 +134,10 @@ describe("explicit handback", () => {
 });
 
 describe("looksLikePrice fails safe toward non-billable", () => {
-  const priced = ["७०,०००", "Rs70", "INR70", "seventy thousand", "70 thousand", "pachaas hazaar", "50 hazar", "80 per head", "70 only", "ek lakh", "5k", "₹ fifty", "twenty", "two hundred", "rupaye de dena", "Rs. 70"];
+  const priced = ["७०,०००", "Rs70", "INR70", "seventy thousand", "70 thousand", "pachaas hazaar", "50 hazar", "80 per head", "70 only", "ek lakh", "5k", "₹ fifty", "twenty", "two hundred", "rupaye de dena", "Rs. 70", "पचास हज़ार रुपये", "एक लाख", "pachees rupaye", "free for you", "twenty five", "do hazaar", "five thousand", "no charge", "complimentary", "muft", "free of cost", "ten bucks", "a grand"];
   it.each(priced)("treats %j as priced", (t) => expect(looksLikePrice(t)).toBe(true));
-  it.each(["I will call them today, thanks", "Hello, this is the owner. Let me check with the chef."])("leaves %j unpriced", (t) => expect(looksLikePrice(t)).toBe(false));
+  const plain = ["I will call them today, thanks", "Hello, this is the owner. Let me check with the chef.", "Do you want to move it?", "One moment please", "Can you do Saturday", "Two of us will come, ek minute"];
+  it.each(plain)("leaves %j unpriced", (t) => expect(looksLikePrice(t)).toBe(false));
 });
 
 describe("owner-sent prices are non-billable (T15 proof)", () => {

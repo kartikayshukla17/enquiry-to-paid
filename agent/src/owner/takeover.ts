@@ -20,25 +20,33 @@ const HOUR_MS = 3_600_000;
 const TIMER_KIND = "owner_idle_resume" as const;
 const NOT_PAUSED = "paused_owner";
 
-const NUMBER_WORDS = [
-  // English
-  "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty",
-  "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "hundred", "thousand", "lakh", "lakhs", "lac", "lacs", "crore", "crores", "million",
-  // Hinglish
-  "ek", "do", "teen", "char", "chaar", "paanch", "panch", "chhe", "saat", "aath", "nau", "das", "bees", "tees", "chalis", "pachaas", "pachas", "saath", "sattar", "assi", "nabbe", "sau", "hazaar", "hazar", "hajar", "hajaar",
-  // currency words
-  "rs", "inr", "rupee", "rupees", "rupaye", "rupaya", "rupay", "usd", "aed", "dirham", "dirhams",
-];
-const PRICE_RE = new RegExp(`[₹$€£]|\\p{Nd}|(?<![\\p{L}\\p{N}])(?:${NUMBER_WORDS.join("|")})(?![\\p{L}\\p{N}])|(?<![\\p{L}\\p{N}])(?:rs|inr)(?=\\p{Nd})|\\p{Nd}\\s*k(?![\\p{L}\\p{N}])`, "iu");
+/** Words that state money on their own: currency, magnitudes, tens, and "free" (a zero price is still the owner's price). */
+const PRICE_WORDS = new Set(
+  [
+    // currency
+    "rs", "inr", "rupee", "rupees", "rupaye", "rupaya", "rupay", "rupiya", "rupiye", "paise", "usd", "aed", "dollar", "dollars", "dirham", "dirhams", "bucks", "grand", "रुपये", "रुपया", "रुपए",
+    // magnitudes
+    "hundred", "thousand", "lakh", "lakhs", "lac", "lacs", "crore", "crores", "million", "sau", "hazaar", "hazar", "hajar", "hajaar", "सौ", "हज़ार", "हजार", "लाख", "करोड़", "करोड",
+    // tens
+    "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "bees", "tees", "chalis", "pachaas", "pachas", "saath", "sattar", "assi", "nabbe", "बीस", "तीस", "चालीस", "पचास", "साठ", "सत्तर", "अस्सी", "नब्बे",
+    // free
+    "free", "complimentary", "muft", "मुफ़्त", "मुफ्त",
+  ].map((w) => w.normalize("NFC")),
+);
+const FREE_PHRASES = /(?<![\p{L}\p{N}])no\s+charge(?![\p{L}\p{N}])/iu;
 
 /**
- * Could this free text state a price? Fail-safe toward non-billable: any Unicode decimal digit (Devanagari too), a number
- * word (English or Hinglish: "seventy thousand", "pachaas hazaar"), a currency word or symbol, or a digit-k ("5k"). A hit
- * means: not sent while the kill switch is on, and the job is flagged owner-priced (never billable). It over-matches on
- * purpose (dates, "do" in English); that errs on the side of not billing, never of billing a price the agent did not set.
+ * Could this free text state a price? Unconditional: any Unicode decimal digit (Devanagari too, covers "5k" and "Rs70"),
+ * a currency symbol, a currency, magnitude or tens word (English, Hinglish, Devanagari), "free"/"no charge"/"muft".
+ * Small number words ("one", "do", "ek", "paanch", ...) are ambiguous in ordinary speech ("Do you want to move it?"), so
+ * alone they do not count; next to a magnitude, currency or tens word ("do hazaar", "twenty five") that word already
+ * triggers, so the combination is covered without listing the small words. A hit means: not sent while the kill switch
+ * is on, and the job is flagged owner-priced (never billable). It still over-matches (dates, "free on Saturday").
  */
 export function looksLikePrice(text: string): boolean {
-  return PRICE_RE.test(text);
+  const t = text.normalize("NFC");
+  if (/[₹$€£]|\p{Nd}/u.test(t) || FREE_PHRASES.test(t)) return true;
+  return (t.toLowerCase().match(/[\p{L}\p{M}]+/gu) ?? []).some((w) => PRICE_WORDS.has(w));
 }
 
 type Ctx = { tenant: { id: string; name: string }; member: Member; now: string; opsThreadId: string };
