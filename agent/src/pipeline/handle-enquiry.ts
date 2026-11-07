@@ -4,7 +4,8 @@ import { KernelError, NEGOTIATION_INTENTS, type Availability, type ExtractedFiel
 import type { Notifier } from "../escalation/index.js";
 import { appendEntry, type LedgerRow } from "../ledger/index.js";
 import { loadActiveCard } from "../ratecard/store.js";
-import type { ReplyWorder } from "../llm/word-reply.js";
+import type { ReplyWorder, WordedReply } from "../llm/word-reply.js";
+import type { ReplyKind } from "../llm/types.js";
 import { defaultResource } from "../availability/native.js";
 import type { AvailabilityProvider } from "../availability/types.js";
 import { alternativeDates, holdHoursOf, offersAlternatives, priorQuoteExpired, timezoneOf } from "./availability-helpers.js";
@@ -55,6 +56,20 @@ export interface EnquiryResult {
   fields: ExtractedFields;
 }
 
+/** Thrown inside the decision transaction (which then rolls back, leaving no trace) when the reply needs LLM wording. */
+class NeedWording extends Error {
+  constructor(
+    readonly key: string,
+    readonly kind: ReplyKind,
+    readonly template: string,
+    readonly values: Record<string, string>,
+  ) {
+    super("reply wording needed outside the transaction");
+  }
+}
+const wordingKey = (kind: string, template: string, values: Record<string, string>): string => JSON.stringify([kind, template, values]);
+const MAX_WORDING_ATTEMPTS = 3;
+
 /**
  * Typed fields -> kernel -> reply (numbers from kernel) -> ledger.
  * Free text (`message`) is stored in the ledger only; it never reaches the kernel.
@@ -65,8 +80,57 @@ export async function handleEnquiry(
 ): Promise<EnquiryResult> {
   const pii = deps.pii ?? piiKeysFromEnv();
   const threshold = deps.lowConfidenceBps ?? lowConfidenceThreshold();
+  // No LLM/network call may run while a DB transaction is open. The decision runs in a short transaction; if the
+  // reply needs LLM wording, that transaction is rolled back (nothing was committed), the wording is fetched with
+  // no transaction open, and the decision is re-run with the wording in hand. The decision is deterministic for
+  // the same thread state, so the committed result is byte-identical to wording it in-line; if the state moved
+  // between the attempts the wording is requested again, and after a few attempts the plain template is used.
+  let pre: { key: string; w: WordedReply } | undefined;
+  let decided: Decision | undefined;
+  for (let attempt = 1; decided === undefined; attempt++) {
+    try {
+      decided = await decide(deps, e, pii, threshold, pre, attempt < MAX_WORDING_ATTEMPTS);
+    } catch (err) {
+      if (!(err instanceof NeedWording) || !deps.worder) throw err;
+      pre = { key: err.key, w: await deps.worder(err.kind, err.template, err.values) };
+    }
+  }
+  const { outcome, reply, ledgerRow, fields, clarifying } = decided;
+  // After commit: the refusal is durable before anyone is told about it.
+  if (outcome.kind === "refusal" && !clarifying) {
+    await deps.notifier.notify({
+      tenantId: e.tenant.id,
+      threadId: e.threadId,
+      at: e.now,
+      reason: outcome.reason,
+      ...(outcome.ruleGap !== undefined && { ruleGap: outcome.ruleGap }),
+      ...(outcome.suggestion !== undefined && { suggestion: outcome.suggestion }),
+      fields,
+    });
+  }
+  return { reply, outcome, ledgerRow, fields };
+}
+
+interface Decision {
+  outcome: TurnOutcome;
+  reply: string;
+  ledgerRow: LedgerRow;
+  fields: ExtractedFields;
+  clarifying: boolean;
+}
+
+type Deps = { pool: Pool; kernel: KernelBridge; notifier: Notifier; pii?: PiiKeys; worder?: ReplyWorder; lowConfidenceBps?: number; availability?: AvailabilityProvider };
+
+async function decide(
+  deps: Deps,
+  e: EnquiryInput,
+  pii: PiiKeys,
+  threshold: number,
+  pre: { key: string; w: WordedReply } | undefined,
+  mayRequestWording: boolean,
+): Promise<Decision> {
   // Everything below runs as the unprivileged app role with app.tenant_id set (RLS applies).
-  const { outcome, reply, ledgerRow, fields, clarifying } = await withTenant(deps.pool, e.tenant.id, async (client) => {
+  return withTenant(deps.pool, e.tenant.id, async (client) => {
     await client.query("INSERT INTO tenants (id, name) VALUES ($1,$2) ON CONFLICT (id) DO NOTHING", [e.tenant.id, e.tenant.name]);
     const customerId = `${e.tenant.id}:cust:${e.customerRef}`;
     await client.query(
@@ -186,9 +250,13 @@ export async function handleEnquiry(
           reply = prefix + renderReply(outcome, fields, card, ctx);
           const t = deps.worder ? replyTemplate(outcome, fields, card, ctx) : undefined;
           if (deps.worder && t) {
-            const w = await deps.worder(t.kind, t.template, t.values);
-            reply = prefix + w.reply;
-            wording = w.provenance;
+            const key = wordingKey(t.kind, t.template, t.values);
+            if (pre?.key === key) {
+              reply = prefix + pre.w.reply;
+              wording = pre.w.provenance;
+            } else if (mayRequestWording) {
+              throw new NeedWording(key, t.kind, t.template, t.values);
+            } // else: the state keeps moving under us; the plain kernel-derived reply stands
           }
         }
       }
@@ -216,17 +284,4 @@ export async function handleEnquiry(
     else await client.query("UPDATE threads SET state = $2, fields = $3::jsonb WHERE id = $1", [e.threadId, state, JSON.stringify(fields)]);
     return { outcome, reply, ledgerRow, fields, clarifying };
   });
-  // After commit: the refusal is durable before anyone is told about it.
-  if (outcome.kind === "refusal" && !clarifying) {
-    await deps.notifier.notify({
-      tenantId: e.tenant.id,
-      threadId: e.threadId,
-      at: e.now,
-      reason: outcome.reason,
-      ...(outcome.ruleGap !== undefined && { ruleGap: outcome.ruleGap }),
-      ...(outcome.suggestion !== undefined && { suggestion: outcome.suggestion }),
-      fields,
-    });
-  }
-  return { reply, outcome, ledgerRow, fields };
 }
