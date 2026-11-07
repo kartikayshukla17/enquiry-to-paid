@@ -55,6 +55,8 @@ const base = (thread: string, message: string, now: string) => ({ tenant: T, thr
 const quote = (thread: string, now = T0) => handleEnquiry(deps(), { ...base(thread, "quote?", now), fields: { ...GOOD } });
 const say = (thread: string, message: string, now = T0) => handleMessage(deps(), base(thread, message, now));
 const tick = (now: string) => runDueTimers(db.pool, now, { kernel, chaserOutbox: outbox });
+/** The shared database holds every test's threads, so assertions look at one thread's chasers. */
+const sentBy = async (th: string, now: string) => (await tick(now)).chasersSent.filter((s) => s.threadId === th);
 const rows = async (sql: string, args: unknown[] = []) => (await withTenant(db.pool, T.id, (c) => c.query(sql, args))).rows;
 const ledger = (thread: string, type: string) => rows("SELECT payload, at FROM ledger_entries WHERE thread_id=$1 AND type=$2 ORDER BY tenant_seq", [thread, type]);
 const thread = () => `ch-${++n}`;
@@ -92,3 +94,67 @@ describe("consent", () => {
     expect((await ledger(th, "chase")).map((e) => e.payload.reason)).toEqual(["no_consent"]);
   });
 });
+
+/** A quoted thread whose customer opted in `optInAfterHours` after the quote. */
+async function optedIn(optInAfterHours = 1): Promise<{ th: string; reply: string }> {
+  const th = thread();
+  const q = await quote(th);
+  await say(th, "yes", at(optInAfterHours));
+  return { th, reply: q.reply };
+}
+
+describe("schedule: chaser 1, chaser 2, then stop", () => {
+  it("sends nothing before the first is due, then chaser 1 as templated free text inside the 24h window, with kernel numbers only", async () => {
+    const { th, reply } = await optedIn(1); // the customer's last message is the opt-in at +1h; the clock restarts from it
+    await tick(at(24.99));
+    expect(sentTo(th)).toEqual([]);
+    expect(await sentBy(th, at(25))).toEqual([{ threadId: th, n: 1 }]);
+    const [m] = sentTo(th);
+    expect(m).toMatchObject({ n: 1, kind: "free_text", at: "2026-11-08T11:00:00Z", customerId: `${T.id}:cust:${ref(th)}` });
+    expect(m!.template).toBeUndefined();
+    expect(m!.params.business).toBe(T.name);
+    expect(reply).toContain(m!.params.amount);
+    expect(m!.text).toContain(m!.params.amount);
+    expect(m!.text).toContain(T.name);
+    expect(m!.text).toContain("Reply STOP");
+    const entries = await ledger(th, "chaser_sent");
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.payload).toMatchObject({ n: 1, kind: "free_text", text: m!.text });
+  });
+
+  it("chaser 2 at 72h goes out as an approved template message (outside the window), and there is never a third", async () => {
+    const { th } = await optedIn(1);
+    await tick(at(25));
+    expect(await sentBy(th, at(72.99))).toEqual([]);
+    expect(await sentBy(th, at(73))).toEqual([{ threadId: th, n: 2 }]);
+    const [, second] = sentTo(th);
+    expect(second).toMatchObject({ n: 2, kind: "template", template: "quote_reminder_2" });
+    expect(second!.text).toContain(second!.params.amount);
+    await tick(at(200));
+    await tick(at(1000));
+    expect(sentTo(th).map((m) => m.n)).toEqual([1, 2]);
+    expect(await ledger(th, "chaser_sent")).toHaveLength(2);
+  });
+
+  it("a long outage does not send both in one tick: chaser 2 is at least 24h behind chaser 1", async () => {
+    const { th } = await optedIn(1);
+    await tick(at(300));
+    expect(sentTo(th).map((m) => m.n)).toEqual([1]);
+    expect(sentTo(th)[0]!.kind).toBe("template"); // 299h after the customer's last message
+    await tick(at(323.99));
+    expect(sentTo(th).map((m) => m.n)).toEqual([1]);
+    await tick(at(324));
+    expect(sentTo(th).map((m) => m.n)).toEqual([1, 2]);
+  });
+
+  it("an opt-in that comes after the first chaser was due restarts the clock from the opt-in", async () => {
+    const th = thread();
+    await quote(th);
+    await tick(at(24)); // no consent yet: cancelled
+    await say(th, "haan", at(30));
+    expect(await sentBy(th, at(53.99))).toEqual([]);
+    expect(await sentBy(th, at(54))).toEqual([{ threadId: th, n: 1 }]);
+    expect(sentTo(th)[0]!.kind).toBe("free_text");
+  });
+});
+// <<APPEND>>
