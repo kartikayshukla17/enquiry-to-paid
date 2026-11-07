@@ -20,7 +20,7 @@ import { issuePaymentLinkInTxn } from "../payments/issue.js";
 import { isCollectedState } from "../payments/webhook.js";
 import type { PaymentProvider } from "../payments/types.js";
 import { providerForTenant, type ProviderRegistry } from "../payments/registry.js";
-import { OPT_IN_QUESTION, appendConsent, cancelChaser, consentOf, lockChaserTimer, scheduleChaser } from "../chasers/consent.js";
+import { OPT_IN_QUESTION, appendConsent, cancelChaser, consentOf, customerKeyOf, lockChaserTimer, scheduleChaser } from "../chasers/consent.js";
 
 export interface EnquiryInput {
   tenant: { id: string; name: string };
@@ -375,10 +375,11 @@ async function decide(
       // The customer wrote: any reminder still pending is moot. A fresh quote then starts its own, asking for opt-in if there is none yet.
       await cancelChaser(client, deps.kernel, { tenantId: e.tenant.id, threadId: e.threadId, reason: "customer_reply", at: e.now });
       if (outcome.kind === "quote" && !killed) {
-        const cs = await consentOf(client, e.tenant.id, customerId);
+        const consentKey = customerKeyOf(pii, e.tenant.id, e.customerRef);
+        const cs = await consentOf(client, e.tenant.id, consentKey);
         if (cs.status === "none" || cs.status === "requested") {
           reply = `${reply}\n\n${OPT_IN_QUESTION}`;
-          if (cs.status === "none") await appendConsent(client, deps.kernel, { tenantId: e.tenant.id, threadId: e.threadId, customerId, action: "requested", source: "quote_reply", at: e.now, extra: { quoteSeq: ledgerRow.seq } });
+          if (cs.status === "none") await appendConsent(client, deps.kernel, { tenantId: e.tenant.id, threadId: e.threadId, customerId: consentKey, action: "requested", source: "quote_reply", at: e.now, extra: { quoteSeq: ledgerRow.seq } });
         }
         await scheduleChaser(client, e.tenant.id, e.threadId, e.now);
       }

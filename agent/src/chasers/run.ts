@@ -10,7 +10,7 @@ import { appendEntry } from "../ledger/index.js";
 import { nativeAvailability } from "../availability/native.js";
 import { isCollectedState } from "../payments/webhook.js";
 import { readKillSwitch } from "../killswitch/index.js";
-import { CHASER_AFTER_HOURS, MAX_CHASERS, cancelChaser, consentOf, plusHours } from "./consent.js";
+import { CHASER_AFTER_HOURS, MAX_CHASERS, cancelChaser, consentOf, customerKeyOfRow, plusHours } from "./consent.js";
 import { SERVICE_WINDOW_HOURS, chaserParams, renderChaser } from "./templates.js";
 import type { ChaserOutbox } from "./types.js";
 
@@ -59,7 +59,8 @@ export async function runChaserInTxn(
   }
   const validUntil = quote.payload.validUntil;
   if (validUntil && Date.parse(validUntil) <= Date.parse(a.now)) return cancel("quote_expired");
-  const cs = await consentOf(c, a.tenantId, th.customer_id);
+  const customerKey = await customerKeyOfRow(c, a.tenantId, th.customer_id);
+  const cs = await consentOf(c, a.tenantId, customerKey);
   if (cs.status !== "granted") return cancel(cs.status === "revoked" ? "consent_revoked" : "no_consent");
 
   const already = (
@@ -83,10 +84,10 @@ export async function runChaserInTxn(
   const link = (await c.query<{ link_url: string }>("SELECT link_url FROM payments WHERE tenant_id=$1 AND quote_ledger_seq=$2 AND status='created'", [a.tenantId, quote.seq])).rows[0]?.link_url;
   const params = chaserParams(business, quote.payload, link);
   const { template, text } = renderChaser(n, params);
-  await outbox.send({ tenantId: a.tenantId, threadId: a.threadId, customerId: th.customer_id, n, kind, ...(kind === "template" && { template }), params, text, at: a.now });
+  await outbox.send({ tenantId: a.tenantId, threadId: a.threadId, customerId: th.customer_id, n, kind, ...(kind === "template" && { template }), params, text, at: a.now, idempotencyKey: `chaser:${a.threadId}:${quote.tenant_seq}:${n}` });
   await appendEntry(c, kernel, {
     tenantId: a.tenantId, threadId: a.threadId, at: a.now, type: "chaser_sent",
-    payload: { n, quoteSeq: quote.tenant_seq, kind, ...(kind === "template" && { template }), text, params, customerId: th.customer_id, lastCustomerMessageAt: last?.toISOString() ?? null },
+    payload: { n, quoteSeq: quote.tenant_seq, kind, ...(kind === "template" && { template }), text, params, customerId: customerKey, lastCustomerMessageAt: last?.toISOString() ?? null },
   });
   if (n === 1) {
     const next = Math.max(Date.parse(plusHours(anchor, CHASER_AFTER_HOURS[1])), Date.parse(plusHours(a.now, 24)));

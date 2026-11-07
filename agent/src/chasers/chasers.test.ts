@@ -24,6 +24,7 @@ import { nativeAvailability } from "../availability/native.js";
 import { consentStatus, UNSUBSCRIBED_NOTICE } from "./index.js";
 import { appendEntry, verifyLedger } from "../ledger/index.js";
 import { APP_ROLE } from "../tenancy/with-tenant.js";
+import { phoneHash, piiKeysFromEnv } from "../security/pii.js";
 import { collectingChaserOutbox, type ChaserMessage } from "./index.js";
 
 let db: TestDb;
@@ -82,6 +83,8 @@ const tick = (now: string) => runDueTimers(db.pool, now, { kernel, chaserOutbox:
 const sentBy = async (th: string, now: string) => (await tick(now)).chasersSent.filter((s) => s.threadId === th);
 const rows = async (sql: string, args: unknown[] = []) => (await withTenant(db.pool, T.id, (c) => c.query(sql, args))).rows;
 const ledger = (thread: string, type: string) => rows("SELECT payload, at FROM ledger_entries WHERE thread_id=$1 AND type=$2 ORDER BY tenant_seq", [thread, type]);
+/** The customer key in ledger payloads: a keyed hash of the phone, never the phone. */
+const custKey = (th: string) => `${T.id}:cust:${phoneHash(piiKeysFromEnv(), ref(th))}`;
 const thread = () => `ch-${++n}`;
 const sentTo = (th: string) => sent.filter((m) => m.threadId === th);
 
@@ -102,7 +105,7 @@ describe("consent", () => {
     expect(extractCalls).toBe(calls);
     const granted = (await ledger(th, "consent")).filter((e) => e.payload.action === "granted");
     expect(granted).toHaveLength(1);
-    expect(granted[0]!.payload).toMatchObject({ source: "whatsapp_optin_reply", customerId: `${T.id}:cust:${ref(th)}` });
+    expect(granted[0]!.payload).toMatchObject({ source: "whatsapp_optin_reply", customerId: custKey(th) });
     expect(new Date(granted[0]!.at).toISOString()).toBe("2026-11-07T11:00:00.000Z");
   });
 
@@ -397,7 +400,7 @@ describe("stop words", () => {
       expect(r.reply).toBe(UNSUBSCRIBED_NOTICE);
       expect(llmCalls).toBe(0);
       expect((await consentStatus(db.pool, T.id, ref(th))).status).toBe("revoked");
-      expect((await ledger(th, "stop")).map((e) => e.payload)).toMatchObject([{ confirmed: true, customerId: `${T.id}:cust:${ref(th)}` }]);
+      expect((await ledger(th, "stop")).map((e) => e.payload)).toMatchObject([{ confirmed: true, customerId: custKey(th) }]);
     }
   });
 
@@ -408,6 +411,38 @@ describe("stop words", () => {
     expect(llmCalls).toBe(1);
     expect((await consentStatus(db.pool, T.id, ref(th))).status).toBe("granted");
     expect(await ledger(th, "stop")).toEqual([]);
+  });
+});
+
+describe("no raw phone in the immutable ledger", () => {
+  it("consent, stop and chaser_sent entries carry a hashed customer key, never the customer's phone", async () => {
+    const { th } = await optedIn(1);
+    await tick(at(25));
+    await say(th, "STOP", at(26));
+    const entries = [...(await ledger(th, "consent")), ...(await ledger(th, "chaser_sent")), ...(await ledger(th, "stop"))];
+    expect(entries.length).toBeGreaterThanOrEqual(4); // requested, granted, chaser_sent, revoked, stop
+    for (const e of entries) {
+      expect(JSON.stringify(e.payload)).not.toContain(ref(th));
+      expect(e.payload.customerId).toBe(custKey(th));
+    }
+  });
+});
+
+describe("a send that is retried is delivered once", () => {
+  it("the outbox gets an idempotency key (thread, quote, n) and drops a repeat; a send that failed after delivery and is retried reaches the customer once", async () => {
+    const { th } = await optedIn(1);
+    const seen: ChaserMessage[] = [];
+    const real = collectingChaserOutbox(seen);
+    let failNext = true;
+    const flaky = { send: async (m: ChaserMessage) => { await real.send(m); if (failNext) { failNext = false; throw new Error("connection dropped after delivery"); } } };
+    await expect(runDueTimers(db.pool, at(25), { kernel, chaserOutbox: flaky })).rejects.toThrow("connection dropped");
+    await runDueTimers(db.pool, at(25), { kernel, chaserOutbox: flaky });
+    const mine = seen.filter((m) => m.threadId === th);
+    expect(mine).toHaveLength(1); // the second attempt carried the same key and was dropped
+    expect(mine[0]!.idempotencyKey).toMatch(/^.+:\d+:1$/);
+    expect((await ledger(th, "chaser_sent")).map((e) => e.payload.n)).toEqual([1]);
+    await real.send(mine[0]!);
+    expect(seen.filter((m) => m.threadId === th)).toHaveLength(1);
   });
 });
 
@@ -536,7 +571,7 @@ describe("concurrency (real races, row locks)", () => {
     const { th } = await optedIn(1);
     await withThreadLockHeld(
       th,
-      (c) => import("./consent.js").then((m) => m.appendConsent(c, kernel, { tenantId: T.id, threadId: th, customerId: `${T.id}:cust:${ref(th)}`, action: "revoked", source: "stop_word", at: at(24) })).then(() => undefined),
+      (c) => import("./consent.js").then((m) => m.appendConsent(c, kernel, { tenantId: T.id, threadId: th, customerId: custKey(th), action: "revoked", source: "stop_word", at: at(24) })).then(() => undefined),
       () => tick(at(25)),
     );
     expect(sentTo(th)).toEqual([]);

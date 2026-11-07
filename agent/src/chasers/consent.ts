@@ -12,6 +12,7 @@ import { appendEntry, type LedgerRow } from "../ledger/index.js";
 import { readKillSwitch } from "../killswitch/index.js";
 import { scheduleTimer } from "../timers/index.js";
 import { withTenant } from "../tenancy/with-tenant.js";
+import { phoneHash, piiKeysFromEnv, type PiiKeys } from "../security/pii.js";
 import { classifyCustomerText } from "./words.js";
 
 export const OPT_IN_QUESTION = "Reply YES if you would like up to two reminders about this quote. Reply STOP at any time and I will stop.";
@@ -24,7 +25,13 @@ const HOUR_MS = 3_600_000;
 export const CHASER_AFTER_HOURS = [24, 72] as const;
 export const MAX_CHASERS = CHASER_AFTER_HOURS.length;
 
-export const customerIdOf = (tenantId: string, customerRef: string): string => `${tenantId}:cust:${customerRef}`;
+/** Key for the customer in ledger payloads: a keyed hash of the phone (the immutable ledger never holds the phone itself). */
+export const customerKeyOf = (pii: PiiKeys, tenantId: string, customerRef: string): string => `${tenantId}:cust:${phoneHash(pii, customerRef)}`;
+/** The same key for a stored customers row (its phone_hash column is that hash). */
+export async function customerKeyOfRow(c: PoolClient, tenantId: string, customerRowId: string): Promise<string> {
+  const r = (await c.query<{ phone_hash: string }>("SELECT phone_hash FROM customers WHERE tenant_id=$1 AND id=$2", [tenantId, customerRowId])).rows[0];
+  return `${tenantId}:cust:${r?.phone_hash ?? "unknown"}`;
+}
 export const plusHours = (iso: string, hours: number): string => new Date(Date.parse(iso) + hours * HOUR_MS).toISOString();
 
 export type ConsentState =
@@ -43,8 +50,8 @@ export async function consentOf(c: PoolClient, tenantId: string, customerId: str
 }
 
 /** Read seam for the owner/ops side and for tests: the customer's consent as the ledger currently says it. */
-export async function consentStatus(pool: Pool, tenantId: string, customerRef: string): Promise<ConsentState> {
-  return withTenant(pool, tenantId, (c) => consentOf(c, tenantId, customerIdOf(tenantId, customerRef)));
+export async function consentStatus(pool: Pool, tenantId: string, customerRef: string, pii: PiiKeys = piiKeysFromEnv()): Promise<ConsentState> {
+  return withTenant(pool, tenantId, (c) => consentOf(c, tenantId, customerKeyOf(pii, tenantId, customerRef)));
 }
 
 export function appendConsent(
@@ -97,23 +104,24 @@ const consentOutcome = (gap: string): TurnOutcome => ({ kind: "refusal", reason:
  * not one, and the normal pipeline takes it. A "yes" counts only as the answer to a pending opt-in question on the same thread.
  */
 export async function handleConsentMessage(
-  deps: { pool: Pool; kernel: KernelBridge },
+  deps: { pool: Pool; kernel: KernelBridge; pii?: PiiKeys },
   e: { tenant: { id: string }; threadId: string; customerRef: string; message: string; now: string },
 ): Promise<ConsentReply | undefined> {
   const word = classifyCustomerText(e.message);
   if (word === undefined) return undefined;
-  const customerId = customerIdOf(e.tenant.id, e.customerRef);
+  const customerKey = customerKeyOf(deps.pii ?? piiKeysFromEnv(), e.tenant.id, e.customerRef);
+  const customerRowId = `${e.tenant.id}:cust:${e.customerRef}`; // the customers/threads row id, never written to the ledger
   return withTenant(deps.pool, e.tenant.id, async (c): Promise<ConsentReply | undefined> => {
     // All of this customer's chaser timers first (in id order), then this thread, then the ledger head.
     const timers = (
       await c.query<{ subject_id: string }>(
         `SELECT subject_id FROM timers WHERE tenant_id=$1 AND kind='chaser' AND subject_id IN (SELECT id FROM threads WHERE tenant_id=$1 AND customer_id=$2) ORDER BY subject_id FOR UPDATE`,
-        [e.tenant.id, customerId],
+        [e.tenant.id, customerRowId],
       )
     ).rows.map((r) => r.subject_id);
     await lockChaserTimer(c, e.tenant.id, e.threadId);
     const th = (await c.query<{ state: string }>("SELECT state FROM threads WHERE id=$1 FOR UPDATE", [e.threadId])).rows[0];
-    const cs = await consentOf(c, e.tenant.id, customerId);
+    const cs = await consentOf(c, e.tenant.id, customerKey);
     if (word === "yes") {
       if (cs.status !== "requested" || cs.threadId !== e.threadId || !th) return undefined;
       // Only stop words bypass a paused thread or the kill switch: a "yes" there is an ordinary message for T18 / T28 to handle.
@@ -124,7 +132,7 @@ export async function handleConsentMessage(
       ).rows[0];
       if (lastOutcome?.type !== "quote") return undefined;
       const ledgerRow = await appendConsent(c, deps.kernel, {
-        tenantId: e.tenant.id, threadId: e.threadId, customerId, action: "granted", source: "whatsapp_optin_reply", at: e.now, extra: { requestSeq: cs.seq, text: e.message },
+        tenantId: e.tenant.id, threadId: e.threadId, customerId: customerKey, action: "granted", source: "whatsapp_optin_reply", at: e.now, extra: { requestSeq: cs.seq, text: e.message },
       });
       // The clock for the reminders restarts from this answer when it came after the quote was sent.
       if (th.state === "quoted") await scheduleChaser(c, e.tenant.id, e.threadId, e.now);
@@ -133,9 +141,9 @@ export async function handleConsentMessage(
     // A stop word is honoured whatever else is going on: kill switch, owner takeover, a settled thread. It prices nothing.
     const threadId = th ? e.threadId : null;
     const again = cs.status === "revoked";
-    if (!again) await appendConsent(c, deps.kernel, { tenantId: e.tenant.id, threadId, customerId, action: "revoked", source: "stop_word", at: e.now, extra: { text: e.message } });
+    if (!again) await appendConsent(c, deps.kernel, { tenantId: e.tenant.id, threadId, customerId: customerKey, action: "revoked", source: "stop_word", at: e.now, extra: { text: e.message } });
     const ledgerRow = await appendEntry(c, deps.kernel, {
-      tenantId: e.tenant.id, threadId, at: e.now, type: "stop", payload: { customerId, text: e.message, confirmed: !again },
+      tenantId: e.tenant.id, threadId, at: e.now, type: "stop", payload: { customerId: customerKey, text: e.message, confirmed: !again },
     });
     // Every pending reminder for this customer, on any of their threads, is cancelled now (and would be again at send time).
     for (const t of new Set([...timers, ...(th ? [e.threadId] : [])])) await cancelChaser(c, deps.kernel, { tenantId: e.tenant.id, threadId: t, reason: "stop_word", at: e.now });

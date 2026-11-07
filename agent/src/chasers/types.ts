@@ -19,6 +19,8 @@ export interface ChaserMessage {
   params: { business: string; amount: string; link?: string };
   text: string;
   at: string;
+  /** Same key for the same (thread, quote, n): a retried send must not reach the customer twice. */
+  idempotencyKey: string;
 }
 
 export interface ChaserOutbox {
@@ -26,8 +28,11 @@ export interface ChaserOutbox {
 }
 
 export function collectingChaserOutbox(sink: ChaserMessage[]): ChaserOutbox {
+  const keys = new Set<string>();
   return {
     send(m) {
+      if (keys.has(m.idempotencyKey)) return Promise.resolve();
+      keys.add(m.idempotencyKey);
       sink.push(m);
       return Promise.resolve();
     },
