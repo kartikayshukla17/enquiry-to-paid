@@ -42,7 +42,9 @@ export default function SimulatorPage() {
     setCustomerRef("web-" + Math.random().toString(36).slice(2, 10));
     fetch("/api/sim").then((r) => r.json()).then((j) => setMode(j.ok ? `${j.provider} / ${j.mode}` : "offline")).catch(() => setMode("offline"));
   }, []);
-  useEffect(() => end.current?.scrollIntoView({ behavior: "smooth" }), [msgs, busy]);
+  useEffect(() => {
+    end.current?.scrollIntoView({ behavior: "smooth" });
+  }, [msgs, busy]);
 
   function reset(next = card) {
     setCard(next);
