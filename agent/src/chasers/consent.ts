@@ -16,6 +16,8 @@ import { classifyCustomerText } from "./words.js";
 export const OPT_IN_QUESTION = "Reply YES if you would like up to two reminders about this quote. Reply STOP at any time and I will stop.";
 export const CONSENT_THANKS = "Thank you. I will send at most two reminders about this quote. Reply STOP at any time and I will stop.";
 
+export const UNSUBSCRIBED_NOTICE = "You are unsubscribed. I will not send you any more reminders. You can still message me about your enquiry at any time.";
+
 const HOUR_MS = 3_600_000;
 /** Hours after the anchor (the quote, or a later grant of consent) at which chaser 1 and chaser 2 are due. Two, then stop. */
 export const CHASER_AFTER_HOURS = [24, 72] as const;
@@ -101,15 +103,35 @@ export async function handleConsentMessage(
   if (word === undefined) return undefined;
   const customerId = customerIdOf(e.tenant.id, e.customerRef);
   return withTenant(deps.pool, e.tenant.id, async (c): Promise<ConsentReply | undefined> => {
+    // All of this customer's chaser timers first (in id order), then this thread, then the ledger head.
+    const timers = (
+      await c.query<{ subject_id: string }>(
+        `SELECT subject_id FROM timers WHERE tenant_id=$1 AND kind='chaser' AND subject_id IN (SELECT id FROM threads WHERE tenant_id=$1 AND customer_id=$2) ORDER BY subject_id FOR UPDATE`,
+        [e.tenant.id, customerId],
+      )
+    ).rows.map((r) => r.subject_id);
     await lockChaserTimer(c, e.tenant.id, e.threadId);
     const th = (await c.query<{ state: string }>("SELECT state FROM threads WHERE id=$1 FOR UPDATE", [e.threadId])).rows[0];
     const cs = await consentOf(c, e.tenant.id, customerId);
-    if (cs.status !== "requested" || cs.threadId !== e.threadId || !th) return undefined;
-    const ledgerRow = await appendConsent(c, deps.kernel, {
-      tenantId: e.tenant.id, threadId: e.threadId, customerId, action: "granted", source: "whatsapp_optin_reply", at: e.now, extra: { requestSeq: cs.seq, text: e.message },
+    if (word === "yes") {
+      if (cs.status !== "requested" || cs.threadId !== e.threadId || !th) return undefined;
+      const ledgerRow = await appendConsent(c, deps.kernel, {
+        tenantId: e.tenant.id, threadId: e.threadId, customerId, action: "granted", source: "whatsapp_optin_reply", at: e.now, extra: { requestSeq: cs.seq, text: e.message },
+      });
+      // The clock for the reminders restarts from this answer when it came after the quote was sent.
+      if (th.state === "quoted") await scheduleChaser(c, e.tenant.id, e.threadId, e.now);
+      return { reply: CONSENT_THANKS, outcome: consentOutcome("consent_granted"), ledgerRow, fields: NO_FIELDS, consent: "granted" };
+    }
+    // A stop word is honoured whatever else is going on: kill switch, owner takeover, a settled thread. It prices nothing.
+    const threadId = th ? e.threadId : null;
+    const again = cs.status === "revoked";
+    if (!again) await appendConsent(c, deps.kernel, { tenantId: e.tenant.id, threadId, customerId, action: "revoked", source: "stop_word", at: e.now, extra: { text: e.message } });
+    const ledgerRow = await appendEntry(c, deps.kernel, {
+      tenantId: e.tenant.id, threadId, at: e.now, type: "stop", payload: { customerId, text: e.message, confirmed: !again },
     });
-    // The clock for the reminders restarts from this answer when it came after the quote was sent.
-    if (th.state === "quoted") await scheduleChaser(c, e.tenant.id, e.threadId, e.now);
-    return { reply: CONSENT_THANKS, outcome: consentOutcome("consent_granted"), ledgerRow, fields: NO_FIELDS, consent: "granted" };
+    // Every pending reminder for this customer, on any of their threads, is cancelled now (and would be again at send time).
+    for (const t of new Set([...timers, ...(th ? [e.threadId] : [])])) await cancelChaser(c, deps.kernel, { tenantId: e.tenant.id, threadId: t, reason: "stop_word", at: e.now });
+    // The customer is told once: a second stop word gets no reply.
+    return { reply: again ? "" : UNSUBSCRIBED_NOTICE, outcome: consentOutcome("customer_stop_request"), ledgerRow, fields: NO_FIELDS, consent: "revoked" };
   });
 }

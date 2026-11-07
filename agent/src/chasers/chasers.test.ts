@@ -21,6 +21,7 @@ import { setKillSwitch } from "../killswitch/index.js";
 import { handleOwnerMessage } from "../owner/handle.js";
 import { seedOwnerMembers } from "../owner/seed.js";
 import { nativeAvailability } from "../availability/native.js";
+import { consentStatus, UNSUBSCRIBED_NOTICE } from "./index.js";
 import { collectingChaserOutbox, type ChaserMessage } from "./index.js";
 
 let db: TestDb;
@@ -273,6 +274,57 @@ describe("cancellation: checked again under the lock when the chaser is due", ()
     await tick(at(25));
     expect(sentTo(th)).toEqual([]);
     expect(await cancelReasons(th)).toEqual(["hold_expired"]);
+  });
+});
+
+/** Every way a customer says stop that must be honoured. Each row is one message, as typed. */
+const STOP_WORDS: [string, string][] = [
+  // English
+  ["english", "STOP"], ["english", "stop"], ["english", "Stop."], ["english", "  stop  \n"], ["english", "STOP!!!"], ["english", "Stop \u{1F64F}"],
+  ["english", "please stop"], ["english", "Please STOP"], ["english", "plz stop"], ["english", "pls, stop"], ["english", "stop messaging me"], ["english", "stop sending messages"],
+  ["english", "STOP ALL"], ["english", "unsubscribe"], ["english", "UNSUBSCRIBE"], ["english", "Unsubscribe me"], ["english", "unsubscribe."], ["english", "opt out"], ["english", "opt-out"], ["english", "OPTOUT"],
+  ["english (full-width)", "\uFF33\uFF34\uFF2F\uFF30"], ["english (zero-width inside)", "st\u200Bop"],
+  // Hinglish
+  ["hinglish", "ruko"], ["hinglish", "Ruko"], ["hinglish", "RUKO!"], ["hinglish", "ruko."], ["hinglish", "please ruko"],
+  ["hinglish", "band karo"], ["hinglish", "Band Karo!"], ["hinglish", "band kar do"], ["hinglish", "bandh karo"], ["hinglish", "band karo ye messages"],
+  ["hinglish", "mat bhejo"], ["hinglish", "Mat bhejo please"], ["hinglish", "MAT BHEJO!!"], ["hinglish", "messages mat bhejo"], ["hinglish", "mat bhejna"], ["hinglish", "bas karo"],
+  // Devanagari
+  ["devanagari", "बंद करो"], ["devanagari", "बंद करो।"], ["devanagari", "बंद करो!"], ["devanagari", "बन्द करो"], ["devanagari", "बंद कर दो"], ["devanagari", "कृपया बंद करो"], ["devanagari", "ये मैसेज बंद करो"],
+  ["devanagari", "रुको"], ["devanagari", "रुको!"], ["devanagari", "रुको।"], ["devanagari", "मत भेजो"], ["devanagari", "मत भेजो।"], ["devanagari", "मैसेज मत भेजो"], ["devanagari", "मत भेजना"], ["devanagari", "बस करो"],
+];
+/** Messages that mention stopping but are conversation about the quote, not a request to be unsubscribed. */
+const NOT_STOP = [
+  "don't stop now", "please don't stop the quote", "can you stop by tomorrow to discuss the 12th", "I will not unsubscribe, send the quote again",
+  "Stop. Can we do the 20th instead, with 200 guests?", "stopover hotel for the guests?", "ruko main date check karta hoon", "ruko, kal baat karte hain", "रुको मैं तारीख देखता हूँ",
+  "band karo mat, pehle rate batao please", "yes", "ok thanks",
+];
+
+describe("stop words", () => {
+  const stopped = async (text: string) => {
+    const { th } = await optedIn(1);
+    const calls = extractCalls;
+    const r = await say(th, text, at(2));
+    return { th, r, llmCalls: extractCalls - calls };
+  };
+
+  it.each(STOP_WORDS)("%s: %j revokes consent, tells the customer once, and no model sees it", async (_lang, text) => {
+    for (const form of new Set([text, text.normalize("NFC"), text.normalize("NFD")])) {
+      const { th, r, llmCalls } = await stopped(form);
+      expect(r.consent).toBe("revoked");
+      expect(r.reply).toBe(UNSUBSCRIBED_NOTICE);
+      expect(llmCalls).toBe(0);
+      expect((await consentStatus(db.pool, T.id, ref(th))).status).toBe("revoked");
+      expect((await ledger(th, "stop")).map((e) => e.payload)).toMatchObject([{ confirmed: true, customerId: `${T.id}:cust:${ref(th)}` }]);
+    }
+  });
+
+  it.each(NOT_STOP)("%j is a normal message: consent stays, and the pipeline answers it", async (text) => {
+    const { th, r, llmCalls } = await stopped(text);
+    if (text === "yes" || text === "ok thanks") expect(r.consent).toBeUndefined();
+    expect(r.consent).not.toBe("revoked");
+    expect(llmCalls).toBe(1);
+    expect((await consentStatus(db.pool, T.id, ref(th))).status).toBe("granted");
+    expect(await ledger(th, "stop")).toEqual([]);
   });
 });
 // <<APPEND>>
