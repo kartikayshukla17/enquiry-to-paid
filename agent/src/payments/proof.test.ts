@@ -162,8 +162,8 @@ describe("guard: the webhook is the only writer of a collected ledger entry", ()
       .filter((p) => /["']collected["']/.test(readFileSync(p, "utf8")))
       .map((p) => path.relative(SRC, p))
       .sort();
-    // ledger/index.ts: the type union; proof.ts: reads it; webhook.ts: writes it; simulator/ack: thread state label only if present.
-    expect(hits.filter((h) => !["ledger/index.ts", "payments/proof.ts", "payments/webhook.ts"].includes(h))).toEqual([]);
+    // ledger/index.ts: the type union; proof.ts and owner/digest.ts (T17, a read-only SUM for the daily digest): read it; webhook.ts: writes it; simulator/ack: thread state label only if present.
+    expect(hits.filter((h) => !["ledger/index.ts", "payments/proof.ts", "payments/webhook.ts", "owner/digest.ts"].includes(h))).toEqual([]);
   });
 
   it("the guard bites: a planted writer is caught by the same pattern", () => {

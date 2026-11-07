@@ -65,6 +65,7 @@ function summarize(r: Row): string {
     case "collected": return `collected ${money(p.amountMinor, p.currency)} via ${String(p.provider)} event ${String(p.eventId)}`;
     case "payment_mismatch": return `payment flagged: ${String(p.reason)}`;
     case "correction": return `correction of entry ${String(r.corrects)}`;
+    case "owner_quote": return `owner-set price ${money(p.total, p.currency)} (owner-priced, not billable)`;
     case "owner_message": return `owner message (${String(p.command ?? "text")})`;
     default: return r.type;
   }
@@ -88,10 +89,11 @@ export async function proofForThread(pool: Pool, kernel: KernelBridge, a: { tena
   const verdict = await verifyLedger(pool, kernel, { tenantId: a.tenantId });
   if (!verdict.ok) return no("chain_broken", `the tenant's ledger chain does not verify (${verdict.reason} at tenant_seq ${verdict.tenantSeq ?? "-"}); nothing on it can be vouched for`, false);
 
+  // An owner-set price (T17 `owner_quote`, flagged ownerPriced) makes the job non-billable even though the agent also refused or quoted earlier.
+  const ownerPriced = rows.find((r) => r.type === "owner_quote" || (r.type === "owner_message" && (r.payload.command === "price" || r.payload.price !== undefined)));
+  if (ownerPriced) return no("owner_priced", `the owner set the price (owner message at entry ${ownerPriced.seq}); owner-priced jobs are not billable`, true);
   const quotes = rows.filter((r) => r.type === "quote" && r.rate_card_hash);
   if (quotes.length === 0) return no("no_agent_quote", "the agent never issued a quote on this thread", true);
-  const ownerPriced = rows.find((r) => r.type === "owner_message" && (r.payload.command === "price" || r.payload.price !== undefined));
-  if (ownerPriced) return no("owner_priced", `the owner set the price (owner message at entry ${ownerPriced.seq}); owner-priced jobs are not billable`, true);
 
   const collected = rows.find((r) => r.type === "collected");
   if (!collected) return no("not_collected", "no collected entry: payment has not been confirmed by the payment provider's webhook", true);

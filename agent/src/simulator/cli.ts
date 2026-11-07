@@ -64,9 +64,9 @@ async function main(argv: string[]): Promise<number> {
       await pool.end();
     }
   }
-  if ((cmd !== "run" && cmd !== "two-tenants" && cmd !== "chat") || !fixture) {
+  if ((cmd !== "run" && cmd !== "owner" && cmd !== "two-tenants" && cmd !== "chat") || !fixture) {
     console.error(
-      'usage: pnpm sim run <fixture.json> | pnpm sim two-tenants <fixture.json> | pnpm sim tick --now <iso> | pnpm sim chat "<english text>" [--tenant <id>] [--card <rate-cards/x.json>] [--customer <ref>] [--words]\n' +
+      'usage: pnpm sim run <fixture.json> | pnpm sim owner <fixture.json> (prints the simulated owner WhatsApp thread) | pnpm sim two-tenants <fixture.json> | pnpm sim tick --now <iso> | pnpm sim chat "<english text>" [--tenant <id>] [--card <rate-cards/x.json>] [--customer <ref>] [--words]\n' +
         "  chat/run use LLM_PROVIDER=groq|fixture|keyword (default fixture), LLM_MODEL (must be in agent/config/enabled-providers.json) and LLM_MODE=record|replay|live (default replay, offline)",
     );
     return 2;
@@ -115,15 +115,25 @@ async function main(argv: string[]): Promise<number> {
     }
     // A fixture with `holds: true` replays a whole timeline on its own clock, so it runs in a throwaway database
     // (re-running against a database that already holds the date would otherwise change the story).
-    const scratch = JSON.parse(await readFile(resolveFixture(fixture), "utf8")) as { holds?: boolean };
-    const scratchDb = scratch.holds ? await createTestDb() : undefined;
+    const scratch = JSON.parse(await readFile(resolveFixture(fixture), "utf8")) as { holds?: boolean; owners?: unknown[] };
+    const scratchDb = scratch.holds || scratch.owners ? await createTestDb() : undefined;
     let r;
     try {
       r = await runFixture(fixture, { pool: scratchDb?.pool ?? pool });
     } finally {
       await scratchDb?.drop();
     }
-    if (scratchDb) console.error("note: hold fixture ran in a throwaway database (dropped afterwards)");
+    if (scratchDb) console.error("note: this fixture ran in a throwaway database (dropped afterwards)");
+    if (cmd === "owner" && !r.ownerTranscript) {
+      console.error("this fixture has no `owners`, so there is no owner thread to show");
+      return 2;
+    }
+    for (const l of r.ownerTranscript ?? []) {
+      const head = l.dir === "to_owner" ? `agent -> ${l.kind === "reply" ? "sender" : l.to} (${l.kind})` : l.dir === "from_owner" ? `${l.from} -> agent` : `agent -> customer thread ${l.threadId}`;
+      console.log(`--- ${l.at} ${head} (fictional) ---`);
+      console.log(l.text);
+    }
+    if (cmd === "owner") return 0;
     r.turns.forEach((t, i) => {
       console.log(`--- WhatsApp reply ${i + 1}/${r.turns.length} (fictional) ---`);
       console.log(t.reply);
