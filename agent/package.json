@@ -7,6 +7,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "sim": "tsx src/simulator/cli.ts",
+    "db:setup": "tsx --env-file=.env src/db/setup.ts",
     "sim:web": "tsx src/simulator/web.ts",
     "eval": "tsx src/eval/cli.ts",
     "provider": "tsx src/provider/cli.ts",
