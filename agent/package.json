@@ -9,6 +9,7 @@
     "sim": "tsx src/simulator/cli.ts",
     "db:setup": "tsx --env-file=.env src/db/setup.ts",
     "sim:web": "tsx src/simulator/web.ts",
+    "auth:web": "tsx --env-file=.env src/auth/web.ts",
     "eval": "tsx src/eval/cli.ts",
     "provider": "tsx src/provider/cli.ts",
     "adversarial": "tsx src/adversarial/cli.ts",

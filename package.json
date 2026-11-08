@@ -12,6 +12,7 @@
     "lint:agent": "pnpm --filter agent typecheck",
     "sim": "pnpm --filter agent sim",
     "sim:web": "pnpm --filter agent sim:web",
+    "auth:web": "pnpm --filter agent auth:web",
     "db:setup": "pnpm --filter agent db:setup",
     "eval": "pnpm --filter agent eval",
     "provider": "pnpm --filter agent provider",
