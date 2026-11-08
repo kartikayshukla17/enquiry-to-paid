@@ -25,6 +25,10 @@ export interface AuthOptions {
   /** Defaults to env BETTER_AUTH_SECRET. Never hard-code or commit one. */
   secret?: string;
   baseURL?: string;
+  /** Defaults to env GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET. Google sign-in is off when either is missing. */
+  google?: { clientId: string; clientSecret: string };
+  /** Extra allowed origins (tunnel, staging). Defaults to comma-separated env BETTER_AUTH_TRUSTED_ORIGINS. */
+  trustedOrigins?: string[];
 }
 
 /**
@@ -37,6 +41,10 @@ export function createAuth(pool: Pool, opts: AuthOptions = {}) {
   const secret = opts.secret ?? process.env.BETTER_AUTH_SECRET;
   if (!secret) throw new Error("BETTER_AUTH_SECRET is not set");
   const db = drizzle(pool, { schema });
+  const clientId = opts.google?.clientId ?? process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = opts.google?.clientSecret ?? process.env.GOOGLE_CLIENT_SECRET;
+  const trustedOrigins =
+    opts.trustedOrigins ?? (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "").split(",").map((o) => o.trim()).filter(Boolean);
 
   // organization.id IS the tenant id. The plugin adds the creator as a member before the
   // create-organization hook runs, so the tenant row is ensured wherever a member is mirrored.
@@ -54,9 +62,12 @@ export function createAuth(pool: Pool, opts: AuthOptions = {}) {
 
   return betterAuth({
     secret,
-    baseURL: opts.baseURL ?? "http://localhost:3000",
+    baseURL: opts.baseURL ?? process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
+    trustedOrigins,
     database: drizzleAdapter(db, { provider: "pg", schema }),
     emailAndPassword: { enabled: true },
+    // Sign-in scopes only (openid, email, profile). Calendar/Sheets/Drive are separate per-tenant grants (T21-T24).
+    socialProviders: clientId && clientSecret ? { google: { clientId, clientSecret } } : {},
     plugins: [
       organization({
         ac,

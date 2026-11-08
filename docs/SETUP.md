@@ -67,8 +67,8 @@ APIs & Services → Library: Google Calendar API, Google Sheets API, Google Driv
 ### 2.6 Env
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`. Rotate the secret if it has ever been pasted into a chat or committed.
 
-### 2.7 Better Auth (not wired yet)
-`agent/src/auth/index.ts` has `baseURL` but no `socialProviders` or `trustedOrigins`. When Google sign-in is added, set `baseURL` and `trustedOrigins` to the same origins as 2.5, read from env.
+### 2.7 Better Auth
+Wired in `agent/src/auth/index.ts`: Google sign-in turns on when `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set. It requests only openid, email and profile. `BETTER_AUTH_URL` (default http://localhost:3000) sets the callback base, so the redirect URI is `<BETTER_AUTH_URL>/api/auth/callback/google`. Extra origins (tunnel, staging) go in `BETTER_AUTH_TRUSTED_ORIGINS`, comma-separated. There is no HTTP route or login page yet that mounts the auth handler; that comes with the dashboard.
 
 ---
 

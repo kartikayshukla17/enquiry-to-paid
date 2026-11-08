@@ -90,3 +90,25 @@ async function ownerHeaders(userId: string): Promise<Headers> {
   const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).join("; ");
   return new Headers({ cookie });
 }
+
+describe("Google sign-in", () => {
+  it("is off without credentials and on with them, redirecting to Google with our callback URI", async () => {
+    const without = createAuth(db.pool, { baseURL: "http://localhost:3000" });
+    await expect(
+      without.api.signInSocial({ body: { provider: "google", callbackURL: "/" } }),
+    ).rejects.toBeTruthy();
+
+    const withG = createAuth(db.pool, {
+      baseURL: "http://localhost:3000",
+      google: { clientId: "test-client-id.apps.googleusercontent.com", clientSecret: "test-secret" },
+    });
+    const r = await withG.api.signInSocial({ body: { provider: "google", callbackURL: "/" } });
+    const u = new URL(r.url!);
+    expect(u.origin).toBe("https://accounts.google.com");
+    expect(u.searchParams.get("client_id")).toBe("test-client-id.apps.googleusercontent.com");
+    expect(u.searchParams.get("redirect_uri")).toBe("http://localhost:3000/api/auth/callback/google");
+    const scopes = (u.searchParams.get("scope") ?? "").split(/[ +]/);
+    expect(scopes).toEqual(expect.arrayContaining(["openid", "email", "profile"]));
+    expect(scopes.some((s) => /gmail|drive|calendar|sheets/.test(s))).toBe(false);
+  });
+});
