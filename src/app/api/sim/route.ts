@@ -13,10 +13,11 @@ export async function POST(req: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   if (process.env.NODE_ENV === "production") return Response.json({ error: "not available" }, { status: 404 });
   try {
-    const r = await fetch(`${SIM}/health`);
+    const q = new URL(req.url).searchParams;
+    const r = await fetch(q.has("customerRef") ? `${SIM}/payment-status?${q.toString()}` : `${SIM}/health`);
     return new Response(await r.text(), { status: r.status, headers: { "content-type": "application/json" } });
   } catch {
     return Response.json({ ok: false }, { status: 502 });

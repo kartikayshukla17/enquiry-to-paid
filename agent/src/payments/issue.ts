@@ -21,7 +21,8 @@ export interface IssuedLink {
 
 export type IssueResult = { ok: true; link: IssuedLink } | { ok: false; reason: "kill_switch" | "no_quote" | "quote_expired" | "not_collectible" };
 
-export const linkReplyText = (url: string): string => `To confirm your booking, pay securely here (simulation, no real payment): ${url}`;
+export const linkReplyText = (url: string, simulated = true): string =>
+  simulated ? `To confirm your booking, pay securely here (simulation, no real payment): ${url}` : `To confirm your booking, pay securely here (test mode, use test cards only): ${url}`;
 
 interface QuoteRef {
   seq: number;
@@ -41,7 +42,7 @@ export async function issuePaymentLinkInTxn(
   const paymentId = `${a.tenantId}:pay:${a.quote.seq}`;
   const existing = (await client.query<{ link_url: string }>("SELECT link_url FROM payments WHERE id = $1", [paymentId])).rows[0];
   if (existing) {
-    return { ok: true, link: { paymentId, url: existing.link_url, amountMinor: a.quote.amountMinor, currency: a.quote.currency, replyText: linkReplyText(existing.link_url) } };
+    return { ok: true, link: { paymentId, url: existing.link_url, amountMinor: a.quote.amountMinor, currency: a.quote.currency, replyText: linkReplyText(existing.link_url, provider.name.endsWith("-sim")) } };
   }
   const link = await provider.createPaymentLink({
     paymentId,
@@ -64,7 +65,7 @@ export async function issuePaymentLinkInTxn(
     type: "payment_link",
     payload: { paymentId, quoteSeq: a.quote.seq, provider: provider.name, providerLinkId: link.providerLinkId, url: link.url, amountMinor: a.quote.amountMinor, currency: a.quote.currency },
   });
-  return { ok: true, link: { paymentId, url: link.url, amountMinor: a.quote.amountMinor, currency: a.quote.currency, replyText: linkReplyText(link.url) } };
+  return { ok: true, link: { paymentId, url: link.url, amountMinor: a.quote.amountMinor, currency: a.quote.currency, replyText: linkReplyText(link.url, provider.name.endsWith("-sim")) } };
 }
 
 /**

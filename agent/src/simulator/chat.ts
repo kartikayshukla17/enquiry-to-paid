@@ -5,6 +5,8 @@ import type { LedgerRow } from "../ledger/index.js";
 import { createProvider } from "../llm/config.js";
 import type { LlmProvider } from "../llm/types.js";
 import { collectingOutbox, type OwnerOutbox, type OwnerOutgoing } from "../owner/types.js";
+import type { ProviderRegistry } from "../payments/registry.js";
+import { setTenantPaymentProvider } from "../payments/registry.js";
 import { handleMessage } from "../pipeline/handle-message.js";
 import { seedApprovedCard } from "../ratecard/legacy.js";
 import { loadCardSource } from "../ratecard/source.js";
@@ -22,6 +24,9 @@ export interface ChatOptions {
   ownerOutbox?: OwnerOutbox;
   notifier?: Notifier;
   now?: string;
+  /** Payment providers available to this chat; with `paymentProvider` the quote reply carries a link from it. */
+  paymentProviders?: ProviderRegistry;
+  paymentProvider?: string;
 }
 
 /** The seam behind `pnpm sim chat "<text>"`: one free-text customer message through the whole pipeline. */
@@ -34,6 +39,7 @@ export async function runChat(text: string, opts: ChatOptions): Promise<{ reply:
   const now = opts.now ?? "2026-11-07T10:00:00Z";
   // Demo setup: the card goes through the real approval gate (read-backs answered yes by a seeded owner) first.
   await seedApprovedCard({ pool: opts.pool, kernel }, { tenant: { id: tenantId, name: `FICTIONAL: ${tenantId}` }, card: rateCard, now });
+  if (opts.paymentProviders && opts.paymentProvider) await setTenantPaymentProvider(opts.pool, tenantId, opts.paymentProvider);
   const sink: OwnerOutgoing[] = [];
   const res = await handleMessage(
     {
@@ -43,6 +49,7 @@ export async function runChat(text: string, opts: ChatOptions): Promise<{ reply:
       ownerOutbox: opts.ownerOutbox ?? collectingOutbox(sink),
       llm: opts.llm ?? createProvider(),
       wordReplies: opts.wordReplies ?? process.env.LLM_WORD_REPLIES === "1",
+      ...(opts.paymentProviders && opts.paymentProvider && { paymentProviders: opts.paymentProviders }),
     },
     {
       tenant: { id: tenantId, name: `FICTIONAL: ${tenantId}` },

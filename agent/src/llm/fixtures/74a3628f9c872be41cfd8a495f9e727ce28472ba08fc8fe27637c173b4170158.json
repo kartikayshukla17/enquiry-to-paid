@@ -1,0 +1,32 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Hi, wedding reception for 150 guests, Saturday 12 December 2026",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "openai/gpt-oss-120b",
+    "provider": "groq",
+    "region": "us",
+    "usage": {
+      "tokens": 840,
+      "inputTokens": 532,
+      "outputTokens": 308,
+      "costMinor": 6
+    },
+    "fields": {
+      "service": "banquet",
+      "date": "2026-12-12",
+      "guestCount": 150,
+      "locality": null,
+      "package": null,
+      "quantity": null,
+      "hours": null,
+      "distanceKm": null,
+      "language": "en",
+      "intent": "enquiry",
+      "confidenceBps": 9500
+    }
+  }
+}

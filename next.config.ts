@@ -6,7 +6,12 @@ const nextConfig: NextConfig = {
   async rewrites() {
     if (process.env.NODE_ENV === "production") return [];
     const port = process.env.AUTH_WEB_PORT ?? "4011";
-    return [{ source: "/api/auth/:path*", destination: `http://127.0.0.1:${port}/api/auth/:path*` }];
+    const sim = process.env.SIM_WEB_PORT ?? "4010";
+    return [
+      { source: "/api/auth/:path*", destination: `http://127.0.0.1:${port}/api/auth/:path*` },
+      // Payment provider webhooks (Razorpay, Stripe) reach the simulator server through the tunnel.
+      { source: "/api/webhooks/payments/:provider", destination: `http://127.0.0.1:${sim}/webhooks/payments/:provider` },
+    ];
   },
 };
 

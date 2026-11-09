@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 type Line = { label: string; amount: number; ruleId: string };
 type Row = { type: string; payload: { kind?: string; lines?: Line[]; total?: number; validUntil?: string; reason?: string; ruleGap?: string }; modelId?: string | null; provider?: string | null; hash: string; seq: number };
+type Pay = { provider: string; status: string; amount_minor: string; currency: string; link_url: string } | null;
 type Msg = { from: "customer" | "agent"; text: string; row?: Row };
 
 const CARDS = [
@@ -43,6 +44,7 @@ export default function SimulatorPage() {
   const [err, setErr] = useState<string | null>(null);
   const [mode, setMode] = useState<string | null>(null);
   const [customerRef, setCustomerRef] = useState("");
+  const [pay, setPay] = useState<Pay>(null);
   const end = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,7 +55,21 @@ export default function SimulatorPage() {
     end.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs, busy]);
 
+  const hasLink = msgs.some((m) => m.from === "agent" && /https?:\/\//.test(m.text));
+  useEffect(() => {
+    if (!hasLink || !customerRef) return;
+    const poll = () =>
+      fetch(`/api/sim?customerRef=${customerRef}&card=${encodeURIComponent(card)}`)
+        .then((r) => r.json())
+        .then((j) => setPay(j.payment ?? null))
+        .catch(() => {});
+    poll();
+    const t = setInterval(poll, 3000);
+    return () => clearInterval(t);
+  }, [hasLink, customerRef, card]);
+
   function reset(next = card) {
+    setPay(null);
     setCard(next);
     setMsgs([]);
     setErr(null);
@@ -114,11 +130,17 @@ export default function SimulatorPage() {
         {msgs.map((m, i) => (
           <div key={i} className={`flex flex-col gap-1.5 ${m.from === "customer" ? "items-end" : "items-start"}`}>
             <div className={`max-w-[85%] whitespace-pre-wrap px-3.5 py-2.5 text-[0.95rem] leading-snug ${m.from === "customer" ? "bg-enamel-deep text-board" : "bg-board-dim/70 text-ink"}`}>
-              {m.text}
+              <Linkified text={m.text} />
             </div>
             {m.row && <RowCard row={m.row} />}
           </div>
         ))}
+        {pay && (
+          <p className="nums text-sm font-semibold text-ink" role="status">
+            Payment {pay.status === "collected" ? "COLLECTED" : pay.status} · {pay.provider} · {inr(Number(pay.amount_minor))}
+            {pay.status !== "collected" && <span className="font-normal text-ink/70"> · waiting for the provider webhook…</span>}
+          </p>
+        )}
         {busy && <p className="text-sm text-ink/70">Thinking…</p>}
         {err && <p role="alert" className="text-sm font-semibold text-signal-deep">{err}</p>}
         <div ref={end} />
@@ -146,6 +168,23 @@ export default function SimulatorPage() {
         </button>
       </form>
     </main>
+  );
+}
+
+function Linkified({ text }: { text: string }) {
+  const parts = text.split(/(https?:\/\/\S+)/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        /^https?:\/\//.test(p) ? (
+          <a key={i} href={p} target="_blank" rel="noreferrer" className="break-all font-semibold underline">
+            {p}
+          </a>
+        ) : (
+          <span key={i}>{p}</span>
+        ),
+      )}
+    </>
   );
 }
 

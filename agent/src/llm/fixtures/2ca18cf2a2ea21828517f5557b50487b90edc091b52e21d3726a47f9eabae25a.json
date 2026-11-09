@@ -1,0 +1,32 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Please quote 750 steel bolts for our workshop.",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "openai/gpt-oss-120b",
+    "provider": "groq",
+    "region": "us",
+    "usage": {
+      "tokens": 732,
+      "inputTokens": 525,
+      "outputTokens": 207,
+      "costMinor": 5
+    },
+    "fields": {
+      "service": null,
+      "date": null,
+      "guestCount": null,
+      "locality": null,
+      "package": null,
+      "quantity": 750,
+      "hours": null,
+      "distanceKm": null,
+      "language": "en",
+      "intent": "enquiry",
+      "confidenceBps": 10000
+    }
+  }
+}

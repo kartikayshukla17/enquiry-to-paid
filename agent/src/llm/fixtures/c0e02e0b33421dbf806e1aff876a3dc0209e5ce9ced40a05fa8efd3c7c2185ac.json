@@ -1,0 +1,32 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Hi, we want to book your banquet hall for a wedding reception, 150 guests, Saturday 12 December 2026",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "openai/gpt-oss-120b",
+    "provider": "groq",
+    "region": "us",
+    "usage": {
+      "tokens": 711,
+      "inputTokens": 541,
+      "outputTokens": 170,
+      "costMinor": 5
+    },
+    "fields": {
+      "service": "banquet",
+      "date": "2026-12-12",
+      "guestCount": 150,
+      "locality": null,
+      "package": null,
+      "quantity": null,
+      "hours": null,
+      "distanceKm": null,
+      "language": "en",
+      "intent": "enquiry",
+      "confidenceBps": 10000
+    }
+  }
+}

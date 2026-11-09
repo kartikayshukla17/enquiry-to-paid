@@ -1,0 +1,32 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Hi, we need a wedding shoot on 9 December 2026, the Standard package, 6 hours, venue is about 10 km from you.",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "openai/gpt-oss-120b",
+    "provider": "groq",
+    "region": "us",
+    "usage": {
+      "tokens": 843,
+      "inputTokens": 547,
+      "outputTokens": 296,
+      "costMinor": 6
+    },
+    "fields": {
+      "service": "wedding-shoot",
+      "date": "2026-12-09",
+      "guestCount": null,
+      "locality": null,
+      "package": "standard",
+      "quantity": null,
+      "hours": 6,
+      "distanceKm": 10,
+      "language": "en",
+      "intent": "enquiry",
+      "confidenceBps": 9500
+    }
+  }
+}

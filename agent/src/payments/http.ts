@@ -1,0 +1,13 @@
+import type { WebhookResult } from "./webhook.js";
+
+/**
+ * HTTP status for a webhook outcome. Providers retry anything that is not 2xx, so everything that was understood and
+ * safely handled (collected, duplicate, ignored, mismatch) is 200. Only a forged/unsigned request or an unknown
+ * provider path is refused, and nothing in the response body reveals why beyond a short code.
+ */
+export function webhookHttpStatus(r: WebhookResult): number {
+  if (r.status !== "rejected") return 200;
+  if (r.reason === "bad_signature") return 401;
+  if (r.reason === "unknown_provider") return 404;
+  return 400;
+}
