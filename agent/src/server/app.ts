@@ -14,10 +14,13 @@ import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import { webhookHttpStatus } from "../payments/http.js";
 import type { ProviderRegistry } from "../payments/registry.js";
 import { handleProviderWebhook } from "../payments/webhook.js";
+import { decryptPii, piiKeysFromEnv, type PiiKeys } from "../security/pii.js";
 import { runChat } from "../simulator/chat.js";
 import { checkAndBumpUsage, hashVisitorIp, recordFeedback } from "../simulator/playground.js";
 import { REPO_ROOT } from "../ratecard/paths.js";
 import { withTenant } from "../tenancy/with-tenant.js";
+import { describeLedgerEntry } from "./describe-ledger-entry.js";
+import { maskCustomerRef } from "./mask-customer-ref.js";
 
 const MAX_BODY = 8 * 1024;
 const MAX_WEBHOOK_BODY = 256 * 1024;
@@ -63,15 +66,19 @@ function fetchHeaders(req: IncomingMessage): Headers {
 }
 
 /**
- * The /api/app/* response shapes. Exported so V4 (the inbox) can rely on them verbatim; `AppThreadSummary` and
- * `AppThreadDetail` are the obvious extension point for V4's masked customer reference -- this ticket deliberately
- * returns the opaque `customerId` only and does no phone decryption/masking (that's V4's job, not V3b's).
+ * The /api/app/* response shapes. Exported so the console pages can rely on them verbatim.
+ * `maskedCustomerRef` (V4) is computed server-side only, from `customers.phone_enc`, through
+ * `maskCustomerRef` below -- the decrypted raw value never leaves `maskedRef`. `lastMessageSummary`
+ * (V4) is a short, typed-data-only description of the thread's latest ledger entry, from
+ * `describeLedgerEntry`; `null` only when a thread somehow has zero entries.
  */
 export interface AppThreadSummary {
   id: string;
   state: string;
   createdAt: string;
   customerId: string;
+  maskedCustomerRef: string;
+  lastMessageSummary: string | null;
 }
 export interface AppThreadDetail extends AppThreadSummary {
   fields: unknown;
@@ -86,6 +93,10 @@ export interface AppLedgerEntryView {
   provider: string | null;
   region: string | null;
   costMinor: number | null;
+  /** V4: the same one-line, typed-data-only description `AppThreadSummary.lastMessageSummary` uses
+   *  for this entry, from `describeLedgerEntry` -- computed once here so the thread detail screen
+   *  and the inbox list never run two different descriptions of the same row. */
+  summary: string;
 }
 export interface AppPaymentView {
   id: string;
@@ -120,22 +131,62 @@ async function resolveAppCaller(pool: Pool, auth: ReturnType<typeof createAuth>,
   return { ok: true, tenantId };
 }
 
+/**
+ * Decrypts `phone_enc` and masks it -- the ONLY place the decrypted raw value is allowed to exist.
+ * A customer row with no ciphertext yet, or ciphertext that fails to decrypt, masks an empty
+ * string rather than throwing: `maskCustomerRef` never returns blank, so the caller still gets a
+ * safe, non-empty display value instead of a crash or a leak.
+ */
+function maskedRef(phoneEnc: string | null, pii: PiiKeys): string {
+  if (!phoneEnc) return maskCustomerRef("");
+  try {
+    return maskCustomerRef(decryptPii(pii, phoneEnc));
+  } catch {
+    return maskCustomerRef("");
+  }
+}
+
 async function listAppThreads(pool: Pool, tenantId: string): Promise<{ threads: AppThreadSummary[] }> {
+  const pii = piiKeysFromEnv();
   const { rows } = await withTenant(pool, tenantId, (c) =>
-    c.query<{ id: string; state: string; created_at: Date; customer_id: string }>(
-      "SELECT id, state, created_at, customer_id FROM threads WHERE tenant_id=$1 ORDER BY created_at DESC",
+    c.query<{
+      id: string; state: string; created_at: Date; customer_id: string; phone_enc: string | null;
+      last_type: string | null; last_payload: unknown;
+    }>(
+      `SELECT t.id, t.state, t.created_at, t.customer_id, c.phone_enc, le.type AS last_type, le.payload AS last_payload
+         FROM threads t
+         JOIN customers c ON c.id = t.customer_id AND c.tenant_id = t.tenant_id
+         LEFT JOIN LATERAL (
+           SELECT type, payload FROM ledger_entries
+            WHERE tenant_id = t.tenant_id AND thread_id = t.id
+            ORDER BY seq DESC LIMIT 1
+         ) le ON true
+        WHERE t.tenant_id=$1
+        ORDER BY t.created_at DESC`,
       [tenantId],
     ),
   );
-  return { threads: rows.map((r) => ({ id: r.id, state: r.state, createdAt: r.created_at.toISOString(), customerId: r.customer_id })) };
+  return {
+    threads: rows.map((r) => ({
+      id: r.id,
+      state: r.state,
+      createdAt: r.created_at.toISOString(),
+      customerId: r.customer_id,
+      maskedCustomerRef: maskedRef(r.phone_enc, pii),
+      lastMessageSummary: r.last_type ? describeLedgerEntry({ type: r.last_type, payload: r.last_payload }) : null,
+    })),
+  };
 }
 
 /** Undefined when `:id` does not resolve to a row visible under this tenant -- wrong tenant or nonexistent alike. */
 async function getAppThread(pool: Pool, tenantId: string, threadId: string): Promise<{ thread: AppThreadDetail; entries: AppLedgerEntryView[] } | undefined> {
+  const pii = piiKeysFromEnv();
   return withTenant(pool, tenantId, async (c) => {
     const t = (
-      await c.query<{ id: string; state: string; created_at: Date; customer_id: string; fields: unknown }>(
-        "SELECT id, state, created_at, customer_id, fields FROM threads WHERE tenant_id=$1 AND id=$2",
+      await c.query<{ id: string; state: string; created_at: Date; customer_id: string; fields: unknown; phone_enc: string | null }>(
+        `SELECT t.id, t.state, t.created_at, t.customer_id, t.fields, c.phone_enc
+           FROM threads t JOIN customers c ON c.id = t.customer_id AND c.tenant_id = t.tenant_id
+          WHERE t.tenant_id=$1 AND t.id=$2`,
         [tenantId, threadId],
       )
     ).rows[0];
@@ -148,12 +199,23 @@ async function getAppThread(pool: Pool, tenantId: string, threadId: string): Pro
          FROM ledger_entries WHERE tenant_id=$1 AND thread_id=$2 ORDER BY seq ASC`,
       [tenantId, threadId],
     );
+    const entries = rows.map((e) => ({
+      seq: e.seq, at: e.at.toISOString(), type: e.type, payload: e.payload, rateCardHash: e.rate_card_hash,
+      modelId: e.model_id, provider: e.provider, region: e.region, costMinor: e.cost_minor,
+      summary: describeLedgerEntry({ type: e.type, payload: e.payload }),
+    }));
+    const last = entries[entries.length - 1];
     return {
-      thread: { id: t.id, state: t.state, createdAt: t.created_at.toISOString(), customerId: t.customer_id, fields: t.fields },
-      entries: rows.map((e) => ({
-        seq: e.seq, at: e.at.toISOString(), type: e.type, payload: e.payload, rateCardHash: e.rate_card_hash,
-        modelId: e.model_id, provider: e.provider, region: e.region, costMinor: e.cost_minor,
-      })),
+      thread: {
+        id: t.id,
+        state: t.state,
+        createdAt: t.created_at.toISOString(),
+        customerId: t.customer_id,
+        fields: t.fields,
+        maskedCustomerRef: maskedRef(t.phone_enc, pii),
+        lastMessageSummary: last ? last.summary : null,
+      },
+      entries,
     };
   });
 }

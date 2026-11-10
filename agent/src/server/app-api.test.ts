@@ -6,8 +6,15 @@ import { createTestDb, type TestDb } from "../ledger/test-db.js";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import { appendEntry } from "../ledger/index.js";
 import { razorpaySim } from "../payments/razorpay-sim.js";
+import { encryptPii, piiKeysFromEnv } from "../security/pii.js";
 import { withTenant } from "../tenancy/with-tenant.js";
 import { createAppServer } from "./app.js";
+import { maskCustomerRef } from "./mask-customer-ref.js";
+
+// V4: every seeded customer gets a real (fictional) phone number encrypted into phone_enc, the
+// way the real pipeline always does, so these tests exercise the same decrypt-then-mask path the
+// owner console actually uses rather than the no-ciphertext fallback.
+const FICTIONAL_PHONE = "+91 98765 43210";
 
 // V3b: /api/app/* is read-only and tenant-scoped. Every route resolves session -> active org (the
 // tenant id) -> owner role in the app's `members` table, then reads through withTenant (RLS). The
@@ -78,15 +85,16 @@ async function addManager(organizationId: string, email: string): Promise<void> 
 }
 
 /** Seeds one thread (with two ledger entries) and one payment directly, the way the real pipeline would. */
-async function seedThread(tenantId: string, label: string): Promise<{ threadId: string; paymentId: string }> {
+async function seedThread(tenantId: string, label: string, phone = FICTIONAL_PHONE): Promise<{ threadId: string; paymentId: string }> {
   const customerId = `${tenantId}:cust:${label}`;
   const threadId = `${tenantId}:thread:${label}`;
+  const pii = piiKeysFromEnv();
   await withTenant(db.pool, tenantId, async (c) => {
     await c.query("INSERT INTO tenants (id, name) VALUES ($1,$2) ON CONFLICT (id) DO NOTHING", [tenantId, `FICTIONAL: ${tenantId}`]);
-    await c.query("INSERT INTO customers (id, tenant_id, phone_hash) VALUES ($1,$2,$3)", [customerId, tenantId, `hash-${label}`]);
+    await c.query("INSERT INTO customers (id, tenant_id, phone_hash, phone_enc) VALUES ($1,$2,$3,$4)", [customerId, tenantId, `hash-${label}`, encryptPii(pii, phone)]);
     await c.query("INSERT INTO threads (id, tenant_id, customer_id, fields) VALUES ($1,$2,$3,$4)", [threadId, tenantId, customerId, JSON.stringify({ guests: 100 })]);
     const first = await appendEntry(c, kernel, { tenantId, threadId, at: new Date().toISOString(), type: "enquiry", payload: { text: "fictional enquiry" } });
-    await appendEntry(c, kernel, { tenantId, threadId, at: new Date().toISOString(), type: "quote", payload: { total: 50000 } });
+    await appendEntry(c, kernel, { tenantId, threadId, at: new Date().toISOString(), type: "quote", payload: { total: 50000, currency: "INR" } });
     const paymentId = `${threadId}:pay1`;
     await c.query(
       `INSERT INTO payments (id, tenant_id, thread_id, quote_ledger_seq, provider, provider_link_id, link_url, amount_minor, currency, status, created_at)
@@ -124,7 +132,14 @@ describe("GET /api/app/* is tenant-scoped to the session's active org, owner-onl
     expect(listA.status).toBe(200);
     const bodyA = await listA.json();
     expect(bodyA.threads).toHaveLength(1);
-    expect(bodyA.threads[0]).toEqual({ id: seedA.threadId, state: "open", createdAt: expect.any(String), customerId: `${orgA.id}:cust:alpha` });
+    expect(bodyA.threads[0]).toEqual({
+      id: seedA.threadId,
+      state: "open",
+      createdAt: expect.any(String),
+      customerId: `${orgA.id}:cust:alpha`,
+      maskedCustomerRef: maskCustomerRef(FICTIONAL_PHONE),
+      lastMessageSummary: "Quoted ₹500",
+    });
 
     // Tenant A's owner, asking for tenant B's thread id directly -> 404, not tenant B's row, not a 403.
     const crossTenant = await fetch(`${base}/api/app/threads/${encodeURIComponent(seedB.threadId)}`, { headers: { cookie: cookieA } });
@@ -155,7 +170,15 @@ describe("GET /api/app/* is tenant-scoped to the session's active org, owner-onl
     const r = await fetch(`${base}/api/app/threads/${encodeURIComponent(seed.threadId)}`, { headers: { cookie } });
     expect(r.status).toBe(200);
     const body = await r.json();
-    expect(body.thread).toEqual({ id: seed.threadId, state: "open", createdAt: expect.any(String), customerId: `${org.id}:cust:gamma`, fields: { guests: 100 } });
+    expect(body.thread).toEqual({
+      id: seed.threadId,
+      state: "open",
+      createdAt: expect.any(String),
+      customerId: `${org.id}:cust:gamma`,
+      fields: { guests: 100 },
+      maskedCustomerRef: maskCustomerRef(FICTIONAL_PHONE),
+      lastMessageSummary: "Quoted ₹500",
+    });
     expect(body.entries).toHaveLength(2);
     expect(body.entries.map((e: { type: string }) => e.type)).toEqual(["enquiry", "quote"]);
     expect(body.entries[0]).toEqual({
@@ -168,6 +191,7 @@ describe("GET /api/app/* is tenant-scoped to the session's active org, owner-onl
       provider: null,
       region: null,
       costMinor: null,
+      summary: "fictional enquiry",
     });
     expect(body.entries[0].seq).toBeLessThan(body.entries[1].seq);
   });
@@ -236,5 +260,27 @@ describe("GET /api/app/* is tenant-scoped to the session's active org, owner-onl
     const r = await fetch(`${base}/api/app/nope`, { headers: { cookie } });
     expect(r.status).toBe(404);
     expect(await r.json()).toEqual({ error: "not found" });
+  });
+
+  // V4 Done-when, same regex idea as simulator/run-fixture.test.ts's "never stores or prints a raw
+  // phone number": the seeded customer's ref IS a realistic fictional phone number, so phone_enc
+  // really does decrypt to something phone-shaped -- proving the masking actually fires, not just
+  // that nothing phone-shaped happened to be in the fixture.
+  it("never puts a raw phone number in GET /api/app/threads or GET /api/app/threads/:id, only the masked form", async () => {
+    const cookie = await signUpAndGetCookie("v4-owner-h");
+    const org = await createOrg(cookie, "FICTIONAL: Hotel Events", "hotel-events-v4");
+    const seed = await seedThread(org.id, "phoneproof", FICTIONAL_PHONE);
+
+    const list = await fetch(`${base}/api/app/threads`, { headers: { cookie } });
+    expect(list.status).toBe(200);
+    const listBody = await list.json();
+    expect(JSON.stringify(listBody)).not.toMatch(/\+\d{10,}|\b[6-9]\d{9}\b/);
+    expect(JSON.stringify(listBody)).toContain(maskCustomerRef(FICTIONAL_PHONE));
+
+    const detail = await fetch(`${base}/api/app/threads/${encodeURIComponent(seed.threadId)}`, { headers: { cookie } });
+    expect(detail.status).toBe(200);
+    const detailBody = await detail.json();
+    expect(JSON.stringify(detailBody)).not.toMatch(/\+\d{10,}|\b[6-9]\d{9}\b/);
+    expect(JSON.stringify(detailBody)).toContain(maskCustomerRef(FICTIONAL_PHONE));
   });
 });
