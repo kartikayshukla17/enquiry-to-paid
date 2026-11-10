@@ -10,12 +10,13 @@ Companion to `TICKETS.md` (v0, T0-T14) and `UI-TICKETS.md` (owner console). v1 h
 
 ## Phase V1-A — Real channel, stable hosting
 
-### V1 — Deploy to Cloud Run
-- **Slice:** Containerize the webhook/queue process (the same handlers `sim:web` already exercises), deploy to Cloud Run, point `DATABASE_URL` at Supabase Mumbai. One stable HTTPS URL replaces `cloudflared`.
-- **Demo:** `curl https://<service>/health` from the public internet; Razorpay's webhook re-pointed at the stable URL still collects.
+### V1 — Deploy: agent on Render, site on Vercel (code ready 2026-11-11; deploy pending)
+- **Slice:** The agent (auth + chat + payments + playground) is now one process (`agent/src/server/serve.ts`, `pnpm serve`), deployed as a Render web service with a stable HTTPS URL. The Next.js site deploys to Vercel and proxies to that URL via `AGENT_URL` (`next.config.ts` rewrites + the two API routes) -- no more `cloudflared`, no URL that changes every restart.
+- **Demo:** `curl https://<render-service>.onrender.com/health` from the public internet; Razorpay's webhook pointed at `https://<vercel-site>/api/webhooks/payments/razorpay` still collects.
 - **Done when:** a payment made against the deployed URL flips to `collected`, same as the tunnel proved locally.
-- **Depends on:** none (reuses existing webhook route). **Size:** M.
-- **Needs from Kartikay:** a Google Cloud project with billing attached (stays inside the free tier for this traffic).
+- **Depends on:** none. **Size:** M.
+- **Needs from Kartikay:** a Render account (no card required for the free web-service tier) and a Vercel account; see `docs/DEPLOY.md` for the click-by-click steps.
+- **Known tradeoff:** Render's free tier sleeps after 15 minutes idle; a webhook arriving during that window gets a slow (cold-start) response rather than a fast one. Razorpay/Stripe retry on timeout, so it recovers, but a paid Render tier removes the sleep if this becomes a problem.
 
 ### V2 — WhatsApp Cloud API adapter, sandbox number (T25, scoped)
 - **Slice:** Real adapter behind the same `handleMessage` pipeline the simulator already uses: GET verify-token handshake, POST inbound message -> pipeline -> Cloud API send, `X-Hub-Signature-256` check against `WHATSAPP_APP_SECRET`.
