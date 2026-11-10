@@ -45,6 +45,9 @@ export default function SimulatorPage() {
   const [mode, setMode] = useState<string | null>(null);
   const [customerRef, setCustomerRef] = useState("");
   const [pay, setPay] = useState<Pay>(null);
+  const [fb, setFb] = useState<"idle" | "sent">("idle");
+  const [fbComment, setFbComment] = useState("");
+  const [fbOpen, setFbOpen] = useState(false);
   const end = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -68,7 +71,30 @@ export default function SimulatorPage() {
     return () => clearInterval(t);
   }, [hasLink, customerRef, card]);
 
+  async function sendFeedback(rating: "up" | "down") {
+    setFbOpen(rating === "down"); // a thumbs-down invites a comment; a thumbs-up just says thanks
+    try {
+      await fetch("/api/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ card, rating }) });
+      setFb("sent");
+    } catch {
+      /* best-effort: feedback is a courtesy, never blocks the demo */
+    }
+  }
+
+  async function sendFeedbackComment() {
+    if (!fbComment.trim()) return setFbOpen(false);
+    try {
+      await fetch("/api/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ card, rating: "down", comment: fbComment.trim() }) });
+    } catch {
+      /* best-effort */
+    }
+    setFbOpen(false);
+  }
+
   function reset(next = card) {
+    setFb("idle");
+    setFbComment("");
+    setFbOpen(false);
     setPay(null);
     setCard(next);
     setMsgs([]);
@@ -145,6 +171,39 @@ export default function SimulatorPage() {
         {err && <p role="alert" className="text-sm font-semibold text-signal-deep">{err}</p>}
         <div ref={end} />
       </section>
+
+      {msgs.some((m) => m.from === "agent") && (
+        <div className="panel flex flex-col gap-2 p-3.5 text-sm text-ink">
+          {fb === "idle" ? (
+            <div className="flex items-center gap-3">
+              <span className="text-ink/75">How did that feel?</span>
+              <button onClick={() => sendFeedback("up")} aria-label="Good" className="border-2 border-board/45 px-2.5 py-1 hover:border-gold">
+                👍
+              </button>
+              <button onClick={() => sendFeedback("down")} aria-label="Not good" className="border-2 border-board/45 px-2.5 py-1 hover:border-gold">
+                👎
+              </button>
+            </div>
+          ) : (
+            <span className="text-ink/75">Thanks for the feedback.</span>
+          )}
+          {fbOpen && (
+            <div className="flex gap-2">
+              <input
+                value={fbComment}
+                onChange={(e) => setFbComment(e.target.value)}
+                maxLength={1000}
+                placeholder="What went wrong? (optional)"
+                aria-label="Feedback comment"
+                className="flex-1 border-2 border-board/45 bg-board px-3 py-1.5 text-sm text-ink placeholder:text-ink/60"
+              />
+              <button onClick={sendFeedbackComment} className="font-display border-2 border-ink px-3 py-1.5 text-sm uppercase text-ink hover:bg-board-dim">
+                Send
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {(SAMPLES[card] ?? []).map((s) => (

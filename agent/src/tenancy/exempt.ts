@@ -12,4 +12,6 @@ export const TENANT_EXEMPT: Record<string, string> = {
   organization: "Better Auth: organization.id IS the tenant id; managed by the auth library only",
   member: "Better Auth: organization membership; mirrored into the RLS-protected `members` table",
   invitation: "Better Auth: pending invitations; managed by the auth library only",
+  playground_feedback: "public playground (not tenant data): visitor feedback with no tenant_id; written only by the sim server's own pool connection, never through e2p_app or the tenant pipeline (0016_playground.sql)",
+  playground_usage: "public playground (not tenant data): per-visitor-IP-hash daily message cap, no tenant_id; same access as playground_feedback (0016_playground.sql)",
 };

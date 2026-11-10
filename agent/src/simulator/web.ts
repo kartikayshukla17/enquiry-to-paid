@@ -15,6 +15,7 @@ import { stripeLive } from "../payments/stripe-live.js";
 import { stripePaymentLinksSim, stripeSecretFromEnv } from "../payments/stripe-sim.js";
 import { handleProviderWebhook } from "../payments/webhook.js";
 import { withTenant } from "../tenancy/with-tenant.js";
+import { checkAndBumpUsage, hashVisitorIp, recordFeedback } from "./playground.js";
 
 /**
  * Local-only HTTP seam for the web simulator page: POST /chat {text, customerRef?, tenantId?, card?} -> {reply, ledgerRow, held?}.
@@ -33,6 +34,14 @@ const CARDS = new Set(
 // Demo convenience only (same as `pnpm sim`): throwaway process-local keys when none are configured.
 for (const name of ["PII_ENC_KEY", "PHONE_HASH_KEY"]) {
   if (!process.env[name]) process.env[name] = randomBytes(32).toString("base64");
+}
+// Reused as the playground's visitor-IP HMAC key: already a server-only secret, no new env var needed.
+const VISITOR_IP_KEY = process.env.PHONE_HASH_KEY!;
+
+function visitorIp(req: import("node:http").IncomingMessage): string {
+  const fwd = req.headers["x-forwarded-for"];
+  const first = (Array.isArray(fwd) ? fwd[0] : fwd)?.split(",")[0]?.trim();
+  return first || req.socket.remoteAddress || "unknown";
 }
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL });
@@ -95,7 +104,18 @@ createServer(async (req, res) => {
       );
       return send(200, { payment: row ?? null });
     }
+    if (req.method === "POST" && req.url === "/feedback") {
+      const f = JSON.parse(await readBody(req)) as { card?: unknown; rating?: unknown; comment?: unknown };
+      if (typeof f.card !== "string" || !CARDS.has(f.card)) return send(400, { error: "unknown card" });
+      if (f.rating !== "up" && f.rating !== "down") return send(400, { error: "rating must be 'up' or 'down'" });
+      if (f.comment !== undefined && (typeof f.comment !== "string" || f.comment.length > 1000)) return send(400, { error: "comment must be at most 1000 characters" });
+      await recordFeedback(pool, { card: f.card, rating: f.rating, now: new Date().toISOString(), ...(typeof f.comment === "string" && f.comment.trim() && { comment: f.comment.trim() }) });
+      return send(200, { ok: true });
+    }
     if (req.method !== "POST" || req.url !== "/chat") return send(404, { error: "not found" });
+    const ipHash = hashVisitorIp(visitorIp(req), VISITOR_IP_KEY);
+    const usage = await checkAndBumpUsage(pool, ipHash, new Date().toISOString().slice(0, 10));
+    if (!usage.ok) return send(429, { error: "Daily playground limit reached. Please come back tomorrow." });
     const b = JSON.parse(await readBody(req)) as { text?: unknown; customerRef?: unknown; tenantId?: unknown; card?: unknown };
     if (typeof b.text !== "string" || !b.text.trim() || b.text.length > 1000) return send(400, { error: "text must be 1-1000 characters" });
     const customerRef = typeof b.customerRef === "string" && /^[a-z0-9-]{4,40}$/.test(b.customerRef) ? b.customerRef : "web-sim-customer";
