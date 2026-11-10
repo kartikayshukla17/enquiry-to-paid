@@ -40,7 +40,7 @@ Tickets done: T0 to T14 (T15+ and T27 skipped as instructed). T11-T13 were done 
 - Live Groq call never run (no key); adapter verified only against stubbed fetch. Groq is not in the enabled-providers registry, so live use needs recordings plus the gate.
 - Confident wrong reads (invented "next Friday" dates) are not caught by the confidence gate: 2 unsafe quotes remain in the hand-seeded eval (en-09, hg-04), published.
 - `intent` is optional in the schema; a model omitting it on a hostile message is not caught.
-- LLM wording runs inside the DB transaction; move out before real traffic.
+- ~~LLM wording runs inside the DB transaction~~ — stale; verified 2026-11-11 that `handle-enquiry.ts`'s `NeedWording`/retry pattern already fetches wording with no transaction open (the only `deps.worder` call site is outside any `withTenant` callback).
 - No timer scheduler beyond `pnpm sim tick`. Hindi eval set has only 4 cases.
 - Only banquet has a CSV template; other cards are JSON. Google Sheets not wired.
 - Banquet refusal share is 48.6%, near the 50% generality-test line.
