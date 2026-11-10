@@ -8,6 +8,7 @@ import { collectingOutbox, type OwnerOutbox, type OwnerOutgoing } from "../owner
 import type { ProviderRegistry } from "../payments/registry.js";
 import { setTenantPaymentProvider } from "../payments/registry.js";
 import { handleMessage } from "../pipeline/handle-message.js";
+import { businessNameFromCard } from "../ratecard/business-name.js";
 import { seedApprovedCard } from "../ratecard/legacy.js";
 import { loadCardSource } from "../ratecard/source.js";
 
@@ -36,9 +37,10 @@ export async function runChat(text: string, opts: ChatOptions): Promise<{ reply:
   const card = opts.card ?? "rate-cards/fictional-banquet.json";
   const kernel = await loadKernel();
   const rateCard = await loadCardSource(card, kernel);
+  const tenantName = businessNameFromCard(rateCard);
   const now = opts.now ?? "2026-11-07T10:00:00Z";
   // Demo setup: the card goes through the real approval gate (read-backs answered yes by a seeded owner) first.
-  await seedApprovedCard({ pool: opts.pool, kernel }, { tenant: { id: tenantId, name: `FICTIONAL: ${tenantId}` }, card: rateCard, now });
+  await seedApprovedCard({ pool: opts.pool, kernel }, { tenant: { id: tenantId, name: tenantName }, card: rateCard, now });
   if (opts.paymentProviders && opts.paymentProvider) await setTenantPaymentProvider(opts.pool, tenantId, opts.paymentProvider);
   const sink: OwnerOutgoing[] = [];
   const res = await handleMessage(
@@ -52,7 +54,7 @@ export async function runChat(text: string, opts: ChatOptions): Promise<{ reply:
       ...(opts.paymentProviders && opts.paymentProvider && { paymentProviders: opts.paymentProviders }),
     },
     {
-      tenant: { id: tenantId, name: `FICTIONAL: ${tenantId}` },
+      tenant: { id: tenantId, name: tenantName },
       threadId: `${tenantId}:thread:chat:${customerRef}`,
       customerRef,
       rateCard,

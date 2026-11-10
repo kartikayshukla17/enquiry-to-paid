@@ -10,10 +10,10 @@
     "provider": "groq",
     "region": "us",
     "usage": {
-      "tokens": 836,
+      "tokens": 847,
       "inputTokens": 547,
-      "outputTokens": 289,
-      "costMinor": 5
+      "outputTokens": 300,
+      "costMinor": 6
     },
     "fields": {
       "service": "wedding-shoot",
