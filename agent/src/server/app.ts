@@ -1,8 +1,9 @@
 /**
  * The agent as one deployable HTTP process: Better Auth, the simulator/chat pipeline, payment webhooks and the
  * public playground, all in one server so a single host (e.g. one Render service) gives Razorpay/Stripe/the site
- * a single stable URL. Routes, in order: /api/auth/* (Better Auth) -> /health -> /webhooks/payments/:provider ->
- * /payment-status -> /feedback -> /chat -> 404. Binds to all interfaces; the caller picks the port.
+ * a single stable URL. Routes, in order: /api/auth/* (Better Auth) -> /api/app/* (tenant-scoped owner-console
+ * read API, V3b) -> /health -> /webhooks/payments/:provider -> /payment-status -> /feedback -> /chat -> 404.
+ * Binds to all interfaces; the caller picks the port.
  */
 import { readdirSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
@@ -52,6 +53,130 @@ function visitorIp(req: IncomingMessage): string {
   return first || req.socket.remoteAddress || "unknown";
 }
 
+/** Node's plain request-headers object, as a Fetch `Headers` instance -- what `auth.api.*` server calls expect. */
+function fetchHeaders(req: IncomingMessage): Headers {
+  const h = new Headers();
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (v !== undefined) h.set(k, Array.isArray(v) ? v.join(", ") : v);
+  }
+  return h;
+}
+
+/**
+ * The /api/app/* response shapes. Exported so V4 (the inbox) can rely on them verbatim; `AppThreadSummary` and
+ * `AppThreadDetail` are the obvious extension point for V4's masked customer reference -- this ticket deliberately
+ * returns the opaque `customerId` only and does no phone decryption/masking (that's V4's job, not V3b's).
+ */
+export interface AppThreadSummary {
+  id: string;
+  state: string;
+  createdAt: string;
+  customerId: string;
+}
+export interface AppThreadDetail extends AppThreadSummary {
+  fields: unknown;
+}
+export interface AppLedgerEntryView {
+  seq: number;
+  at: string;
+  type: string;
+  payload: unknown;
+  rateCardHash: string | null;
+  modelId: string | null;
+  provider: string | null;
+  region: string | null;
+  costMinor: number | null;
+}
+export interface AppPaymentView {
+  id: string;
+  threadId: string;
+  provider: string;
+  amountMinor: number;
+  currency: string;
+  status: string;
+  createdAt: string;
+  collectedAt: string | null;
+}
+
+type AppCaller = { ok: true; tenantId: string } | { ok: false; status: 401 | 403; body: { error: string } };
+
+/**
+ * Resolves who is allowed to call /api/app/* -- and which tenant they may see -- from the session alone.
+ * Never from anything the client sends: no header, query param or body field is ever consulted here.
+ * `activeOrganizationId` lives in the session row itself (set server-side by Better Auth's own
+ * organization/create and organization/set-active, see agent/src/auth/index.ts); organization.id IS the
+ * tenant id everywhere else in this codebase. The owner check reads this APP's own `members` table
+ * (distinct from Better Auth's `member` table) through `withTenant`, i.e. under RLS for that tenant --
+ * v1 has exactly one real operator, so "owner" is the whole gate; manager/staff enforcement is not v1's job.
+ */
+async function resolveAppCaller(pool: Pool, auth: ReturnType<typeof createAuth>, req: IncomingMessage): Promise<AppCaller> {
+  const session = await auth.api.getSession({ headers: fetchHeaders(req) });
+  const tenantId = session?.session.activeOrganizationId;
+  if (!session || !tenantId) return { ok: false, status: 401, body: { error: "not signed in" } };
+  const role = await withTenant(pool, tenantId, async (c) =>
+    (await c.query<{ role: string }>("SELECT role FROM members WHERE tenant_id=$1 AND user_id=$2", [tenantId, session.user.id])).rows[0]?.role,
+  );
+  if (role !== "owner") return { ok: false, status: 403, body: { error: "owner only" } };
+  return { ok: true, tenantId };
+}
+
+async function listAppThreads(pool: Pool, tenantId: string): Promise<{ threads: AppThreadSummary[] }> {
+  const { rows } = await withTenant(pool, tenantId, (c) =>
+    c.query<{ id: string; state: string; created_at: Date; customer_id: string }>(
+      "SELECT id, state, created_at, customer_id FROM threads WHERE tenant_id=$1 ORDER BY created_at DESC",
+      [tenantId],
+    ),
+  );
+  return { threads: rows.map((r) => ({ id: r.id, state: r.state, createdAt: r.created_at.toISOString(), customerId: r.customer_id })) };
+}
+
+/** Undefined when `:id` does not resolve to a row visible under this tenant -- wrong tenant or nonexistent alike. */
+async function getAppThread(pool: Pool, tenantId: string, threadId: string): Promise<{ thread: AppThreadDetail; entries: AppLedgerEntryView[] } | undefined> {
+  return withTenant(pool, tenantId, async (c) => {
+    const t = (
+      await c.query<{ id: string; state: string; created_at: Date; customer_id: string; fields: unknown }>(
+        "SELECT id, state, created_at, customer_id, fields FROM threads WHERE tenant_id=$1 AND id=$2",
+        [tenantId, threadId],
+      )
+    ).rows[0];
+    if (!t) return undefined;
+    const { rows } = await c.query<{
+      seq: number; at: Date; type: string; payload: unknown; rate_card_hash: string | null;
+      model_id: string | null; provider: string | null; region: string | null; cost_minor: number | null;
+    }>(
+      `SELECT seq::int AS seq, at, type, payload, rate_card_hash, model_id, provider, region, cost_minor::int AS cost_minor
+         FROM ledger_entries WHERE tenant_id=$1 AND thread_id=$2 ORDER BY seq ASC`,
+      [tenantId, threadId],
+    );
+    return {
+      thread: { id: t.id, state: t.state, createdAt: t.created_at.toISOString(), customerId: t.customer_id, fields: t.fields },
+      entries: rows.map((e) => ({
+        seq: e.seq, at: e.at.toISOString(), type: e.type, payload: e.payload, rateCardHash: e.rate_card_hash,
+        modelId: e.model_id, provider: e.provider, region: e.region, costMinor: e.cost_minor,
+      })),
+    };
+  });
+}
+
+async function listAppPayments(pool: Pool, tenantId: string): Promise<{ payments: AppPaymentView[] }> {
+  const { rows } = await withTenant(pool, tenantId, (c) =>
+    c.query<{
+      id: string; thread_id: string; provider: string; amount_minor: number; currency: string;
+      status: string; created_at: Date; collected_at: Date | null;
+    }>(
+      `SELECT id, thread_id, provider, amount_minor::int AS amount_minor, currency, status, created_at, collected_at
+         FROM payments WHERE tenant_id=$1 ORDER BY created_at DESC`,
+      [tenantId],
+    ),
+  );
+  return {
+    payments: rows.map((p) => ({
+      id: p.id, threadId: p.thread_id, provider: p.provider, amountMinor: p.amount_minor, currency: p.currency,
+      status: p.status, createdAt: p.created_at.toISOString(), collectedAt: p.collected_at ? p.collected_at.toISOString() : null,
+    })),
+  };
+}
+
 export interface AppServerDeps {
   pool: Pool;
   kernel: KernelBridge;
@@ -63,7 +188,8 @@ export interface AppServerDeps {
 }
 
 export function createAppServer(deps: AppServerDeps): Server {
-  const authHandler = toNodeHandler(createAuth(deps.pool, deps.auth ?? {}));
+  const auth = createAuth(deps.pool, deps.auth ?? {});
+  const authHandler = toNodeHandler(auth);
 
   return createServer(async (req, res) => {
     const send = (code: number, body: unknown) => {
@@ -74,6 +200,23 @@ export function createAppServer(deps: AppServerDeps): Server {
       if (req.url?.startsWith("/api/auth/")) {
         void authHandler(req, res);
         return;
+      }
+      if (req.url?.startsWith("/api/app/")) {
+        // Every /api/app/* route is read-only: session -> active org (the tenant id, never client-supplied) ->
+        // owner-only in this app's own `members` table -> withTenant (RLS). The query string and body are never
+        // consulted for identity, only `pathname` for routing -- that is the Done-when this ticket proves.
+        const { pathname } = new URL(req.url, "http://x");
+        const caller = await resolveAppCaller(deps.pool, auth, req);
+        if (!caller.ok) return send(caller.status, caller.body);
+        if (req.method !== "GET") return send(404, { error: "not found" });
+        if (pathname === "/api/app/threads") return send(200, await listAppThreads(deps.pool, caller.tenantId));
+        if (pathname === "/api/app/payments") return send(200, await listAppPayments(deps.pool, caller.tenantId));
+        const threadMatch = /^\/api\/app\/threads\/([^/]+)$/.exec(pathname);
+        if (threadMatch) {
+          const result = await getAppThread(deps.pool, caller.tenantId, decodeURIComponent(threadMatch[1]!));
+          return result ? send(200, result) : send(404, { error: "not found" });
+        }
+        return send(404, { error: "not found" });
       }
       if (req.method === "GET" && req.url === "/health") {
         return send(200, { ok: true, provider: process.env.LLM_PROVIDER ?? "fixture", mode: process.env.LLM_MODE ?? "replay" });
