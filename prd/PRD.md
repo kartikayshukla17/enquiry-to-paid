@@ -316,60 +316,62 @@ enquiry-to-paid/
 ## 13. Acceptance Criteria
 
 **US1 — Enquiry in, reply out**
-- [ ] Given a fictional English or Hinglish enquiry, the simulator produces exactly one reply: a quote, a clarifying question, or a refusal.
-- [ ] No reply contains a number not present in the kernel output.
-- [ ] Provider failure yields a safe holding reply and a ledger row, never a quote.
+- [x] Given a fictional English or Hinglish enquiry, the simulator produces exactly one reply: a quote, a clarifying question, or a refusal.
+- [x] No reply contains a number not present in the kernel output.
+- [x] Provider failure yields a safe holding reply and a ledger row, never a quote.
 
 **US2 — Extraction**
-- [ ] Output validates against the schema or is rejected.
-- [ ] Customer text containing instructions ("ignore rules") never alters pipeline behaviour.
-- [ ] Confidence below threshold triggers confirm-back or refusal.
+- [x] Output validates against the schema or is rejected.
+- [x] Customer text containing instructions ("ignore rules") never alters pipeline behaviour.
+- [x] Confidence below threshold triggers confirm-back or refusal.
 
 **US3 — Quote**
-- [ ] Same fields + same rate-card hash → byte-identical quote (1,000 replays).
-- [ ] Every line cites a `ruleId`; totals are integer minor units; tax is its own line.
-- [ ] Quote carries `validUntil` (default 7 days) and hold expiry (default 48h).
-- [ ] An expired quote is re-evaluated, not honoured.
+- [x] Same fields + same rate-card hash → byte-identical quote (1,000 replays).
+- [x] Every line cites a `ruleId`; totals are integer minor units; tax is its own line.
+- [x] Quote carries `validUntil` (default 7 days) and hold expiry (default 48h).
+- [x] An expired quote is re-evaluated, not honoured.
 
 **US4 — Refusal**
-- [ ] Any input without a covering rule returns a typed Refusal, never a number.
-- [ ] Property test: no generated input yields a Quote with a line lacking a rule.
-- [ ] The contractor card refuses the majority of its test enquiries.
+- [x] Any input without a covering rule returns a typed Refusal, never a number.
+- [x] Property test: no generated input yields a Quote with a line lacking a rule.
+- [x] The contractor card refuses the majority of its test enquiries.
 
 **US5 — Escalation (stub)**
-- [ ] Refusal emits an escalation event with reason, rule gap and fields; delivery is a no-op interface in v0.
+- [x] Refusal emits an escalation event with reason, rule gap and fields; delivery is a no-op interface in v0.
 
 **US6 — Ledger**
-- [ ] UPDATE and DELETE on ledger rows fail at the database.
-- [ ] Hash chain verifies; altering a stored row makes verification fail.
-- [ ] Corrections are new entries referencing `corrects`.
-- [ ] Each quote row stores rate-card hash, model ID, provider, region, cost.
+- [x] UPDATE and DELETE on ledger rows fail at the database.
+- [x] Hash chain verifies; altering a stored row makes verification fail.
+- [x] Corrections are new entries referencing `corrects`.
+- [x] Each quote row stores rate-card hash, model ID, provider, region, cost.
 
 **US7 — Availability and holds**
-- [ ] A taken date never yields a quote.
-- [ ] Holds expire automatically and release the date.
-- [ ] If a second availability source disagrees (later), result is refusal + escalation.
+- [x] A taken date never yields a quote.
+- [x] Holds expire automatically and release the date.
+- [ ] If a second availability source disagrees (later), result is refusal + escalation. *(scoped post-v0: no second source exists yet; see tickets/PRD-ACCEPTANCE.md)*
 
 **US8 — Provider swap**
-- [ ] Groq and a fixture provider are interchangeable via config only.
-- [ ] A new provider/model cannot be enabled unless its eval meets or beats the recorded baseline per language.
+- [x] Groq and a fixture provider are interchangeable via config only.
+- [x] A new provider/model cannot be enabled unless its eval meets or beats the recorded baseline per language.
 
 **US9 — Evals**
-- [ ] Labelled English and Hinglish sets run in CI and publish per-language numbers, including poor ones.
-- [ ] Adversarial set covers prompt injection, price anchoring, discount demands, and out-of-card requests; target 0 quotes.
+- [x] Labelled English and Hinglish sets run in CI and publish per-language numbers, including poor ones.
+- [x] Adversarial set covers prompt injection, price anchoring, discount demands, and out-of-card requests; target 0 quotes.
 
 **US10 — Rate card**
-- [ ] A card compiles from the template or fails naming the exact cell/field.
-- [ ] Approval requires read-back worked examples; an unapproved card cannot quote.
-- [ ] Editing a source after approval has no effect until re-approved.
+- [x] A card compiles from the template or fails naming the exact cell/field.
+- [x] Approval requires read-back worked examples; an unapproved card cannot quote.
+- [x] Editing a source after approval has no effect until re-approved.
 
 **US11 — Disclosure**
-- [ ] "Are you a bot / human?" in supported languages gets an honest automated-assistant answer.
+- [x] "Are you a bot / human?" in supported languages gets an honest automated-assistant answer.
 
 **US12 — No negotiation**
-- [ ] Any discount or custom-deal request refuses with escalation; the model never proposes a price.
+- [x] Any discount or custom-deal request refuses with escalation; the model never proposes a price.
 
 ---
+
+*Walked line by line against passing tests on 2026-11-10; see `tickets/PRD-ACCEPTANCE.md` for the file:line evidence behind every box.*
 
 ## 14. Open Questions & Risks
 

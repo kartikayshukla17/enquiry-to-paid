@@ -86,7 +86,8 @@ fn identical_input_gives_byte_identical_output() {
     let card: Value = serde_json::from_str(CARD).unwrap();
     let input = json!({"rateCard":card,"fields":saturday_120(),"availability":no_blocks(),"now":"2026-11-07T10:00:00Z"}).to_string();
     let first = evaluate(&input);
-    for _ in 0..100 {
+    // PRD US3: "same fields + same rate-card hash -> byte-identical quote (1,000 replays)".
+    for _ in 0..1000 {
         assert_eq!(evaluate(&input), first);
     }
 }
