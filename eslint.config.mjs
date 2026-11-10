@@ -21,6 +21,8 @@ const eslintConfig = [
       "agent/**",
       "kernel/**",
       "scripts/**",
+      ".claude/**",
+      ".superpowers/**",
     ],
   },
 ];
