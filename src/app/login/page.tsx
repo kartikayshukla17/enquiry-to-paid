@@ -19,7 +19,7 @@ export default function LoginPage() {
     setBusy(true);
     setErr(null);
     try {
-      const j = await post("sign-in/social", { provider: "google", callbackURL: "/account" });
+      const j = await post("sign-in/social", { provider: "google", callbackURL: "/app" });
       if (!j.url) throw new Error("Google sign-in is not configured (set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET).");
       window.location.href = j.url;
     } catch (e) {
@@ -36,7 +36,7 @@ export default function LoginPage() {
       await (mode === "in"
         ? post("sign-in/email", { email: f.email, password: f.password })
         : post("sign-up/email", { name: f.name || f.email, email: f.email, password: f.password }));
-      window.location.href = "/account";
+      window.location.href = "/app";
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "failed");
       setBusy(false);
