@@ -11,6 +11,7 @@ import { toNodeHandler } from "better-auth/node";
 import type { Pool } from "pg";
 import { createAuth, type AuthOptions } from "../auth/index.js";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
+import { verifyLedger } from "../ledger/index.js";
 import { webhookHttpStatus } from "../payments/http.js";
 import type { ProviderRegistry } from "../payments/registry.js";
 import { handleProviderWebhook } from "../payments/webhook.js";
@@ -107,6 +108,137 @@ export interface AppPaymentView {
   status: string;
   createdAt: string;
   collectedAt: string | null;
+}
+
+/**
+ * V5: one row of the quotes list. `total`/`currency`/`validUntil` are read straight off the ledger
+ * payload (a `quote`'s typed `Quote.total`/`currency`/`validUntil`, or an `owner_quote`'s
+ * `ownerPriced`-shaped `total`/`currency` -- `owner_quote` has no `validUntil`, hence `null`). No
+ * arithmetic happens here; these are exactly the stored fields, narrowed by type only.
+ */
+export interface AppQuoteSummary {
+  seq: number;
+  threadId: string | null;
+  type: "quote" | "owner_quote";
+  at: string;
+  total: number | null;
+  currency: string | null;
+  validUntil: string | null;
+}
+
+/**
+ * V5: the full quote detail. `payload` is the ledger row's typed payload verbatim -- the kernel's own
+ * `Quote` (lines, ruleIds, adjustments, rateCardHash, total, currency, validUntil) for a `quote`, or the
+ * `{ ownerPriced: true, total, currency, ... }` shape for an `owner_quote` -- never reconstructed or
+ * summarised. `rateCardVersion` is the separately looked-up `rate_cards.version` for `payload.rateCardHash`
+ * (a `quote` only); `null` means "unknown" -- either this is an `owner_quote` (no rate card at all) or no
+ * `rate_cards` row matches that hash.
+ */
+export interface AppQuoteDetail {
+  seq: number;
+  threadId: string | null;
+  type: "quote" | "owner_quote";
+  at: string;
+  payload: unknown;
+  rateCardVersion: number | null;
+}
+
+/** The chain-verify badge's response. `ok:false` carries the real `LedgerVerdict`'s reason/seq/tenantSeq
+ *  (never the whole multi-tenant `tenants` array -- the caller only ever asks about their own tenant). */
+export interface AppLedgerVerifyResponse {
+  ok: boolean;
+  reason?: string;
+  seq?: number;
+  tenantSeq?: number;
+}
+
+function numberField(p: Record<string, unknown>, field: string): number | null {
+  const v = p[field];
+  return typeof v === "number" ? v : null;
+}
+function stringField(p: Record<string, unknown>, field: string): string | null {
+  const v = p[field];
+  return typeof v === "string" ? v : null;
+}
+function asPayloadRecord(payload: unknown): Record<string, unknown> {
+  return payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+}
+
+async function listAppQuotes(pool: Pool, tenantId: string): Promise<{ quotes: AppQuoteSummary[] }> {
+  const { rows } = await withTenant(pool, tenantId, (c) =>
+    c.query<{ seq: number; thread_id: string | null; type: string; at: Date; payload: unknown }>(
+      `SELECT seq::int AS seq, thread_id, type, at, payload
+         FROM ledger_entries WHERE tenant_id=$1 AND type IN ('quote','owner_quote') ORDER BY seq DESC`,
+      [tenantId],
+    ),
+  );
+  return {
+    quotes: rows.map((r) => {
+      const p = asPayloadRecord(r.payload);
+      return {
+        seq: r.seq,
+        threadId: r.thread_id,
+        type: r.type as "quote" | "owner_quote",
+        at: r.at.toISOString(),
+        total: numberField(p, "total"),
+        currency: stringField(p, "currency"),
+        validUntil: stringField(p, "validUntil"),
+      };
+    }),
+  };
+}
+
+/** Undefined when `seq` does not resolve to a quote/owner_quote entry visible under this tenant --
+ *  wrong tenant, a non-quote entry type, or nonexistent alike (identical 404 discipline to threads). */
+async function getAppQuote(pool: Pool, tenantId: string, seq: number): Promise<{ quote: AppQuoteDetail } | undefined> {
+  return withTenant(pool, tenantId, async (c) => {
+    const row = (
+      await c.query<{ seq: number; thread_id: string | null; type: string; at: Date; payload: unknown; rate_card_hash: string | null }>(
+        `SELECT seq::int AS seq, thread_id, type, at, payload, rate_card_hash
+           FROM ledger_entries WHERE tenant_id=$1 AND seq=$2 AND type IN ('quote','owner_quote')`,
+        [tenantId, seq],
+      )
+    ).rows[0];
+    if (!row) return undefined;
+    let rateCardVersion: number | null = null;
+    if (row.type === "quote" && row.rate_card_hash) {
+      const v = (
+        await c.query<{ version: number }>(
+          "SELECT version::int AS version FROM rate_cards WHERE tenant_id=$1 AND content_hash=$2 ORDER BY version DESC LIMIT 1",
+          [tenantId, row.rate_card_hash],
+        )
+      ).rows[0];
+      rateCardVersion = v ? v.version : null;
+    }
+    return {
+      quote: {
+        seq: row.seq,
+        threadId: row.thread_id,
+        type: row.type as "quote" | "owner_quote",
+        at: row.at.toISOString(),
+        payload: row.payload,
+        rateCardVersion,
+      },
+    };
+  });
+}
+
+/**
+ * The chain-verify badge's one real data source: calls the actual `verifyLedger` (kernel-backed hash
+ * walk), scoped to exactly the caller's tenant, on the plain owner-role pool -- same calling convention
+ * as `ledger/cli.ts`'s `pnpm ledger verify`, not wrapped in `withTenant`. `resolveAppCaller` is already
+ * the proof the caller may see this tenant; `verifyLedger` is told exactly one tenant id and reads
+ * nothing else, so no second RLS layer is needed around it.
+ */
+async function appLedgerVerify(pool: Pool, kernel: KernelBridge, tenantId: string): Promise<AppLedgerVerifyResponse> {
+  const v = await verifyLedger(pool, kernel, { tenantId });
+  if (v.ok) return { ok: true };
+  return {
+    ok: false,
+    reason: v.reason,
+    ...(v.seq !== null && { seq: v.seq }),
+    ...(v.tenantSeq !== null && { tenantSeq: v.tenantSeq }),
+  };
 }
 
 type AppCaller = { ok: true; tenantId: string } | { ok: false; status: 401 | 403; body: { error: string } };
@@ -273,9 +405,18 @@ export function createAppServer(deps: AppServerDeps): Server {
         if (req.method !== "GET") return send(404, { error: "not found" });
         if (pathname === "/api/app/threads") return send(200, await listAppThreads(deps.pool, caller.tenantId));
         if (pathname === "/api/app/payments") return send(200, await listAppPayments(deps.pool, caller.tenantId));
+        if (pathname === "/api/app/quotes") return send(200, await listAppQuotes(deps.pool, caller.tenantId));
+        if (pathname === "/api/app/ledger-verify") return send(200, await appLedgerVerify(deps.pool, deps.kernel, caller.tenantId));
         const threadMatch = /^\/api\/app\/threads\/([^/]+)$/.exec(pathname);
         if (threadMatch) {
           const result = await getAppThread(deps.pool, caller.tenantId, decodeURIComponent(threadMatch[1]!));
+          return result ? send(200, result) : send(404, { error: "not found" });
+        }
+        const quoteMatch = /^\/api\/app\/quotes\/([^/]+)$/.exec(pathname);
+        if (quoteMatch) {
+          const seq = Number(decodeURIComponent(quoteMatch[1]!));
+          if (!Number.isInteger(seq) || seq <= 0) return send(404, { error: "not found" });
+          const result = await getAppQuote(deps.pool, caller.tenantId, seq);
           return result ? send(200, result) : send(404, { error: "not found" });
         }
         return send(404, { error: "not found" });
