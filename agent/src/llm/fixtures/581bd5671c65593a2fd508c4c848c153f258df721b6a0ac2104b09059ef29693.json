@@ -10,13 +10,13 @@
     "provider": "groq",
     "region": "us",
     "usage": {
-      "tokens": 748,
+      "tokens": 755,
       "inputTokens": 534,
-      "outputTokens": 214,
+      "outputTokens": 221,
       "costMinor": 5
     },
     "fields": {
-      "service": null,
+      "service": "plumbing",
       "date": null,
       "guestCount": null,
       "locality": "greater-noida-west",

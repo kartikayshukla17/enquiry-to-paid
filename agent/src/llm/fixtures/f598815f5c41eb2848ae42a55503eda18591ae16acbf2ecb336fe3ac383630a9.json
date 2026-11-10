@@ -10,9 +10,9 @@
     "provider": "groq",
     "region": "us",
     "usage": {
-      "tokens": 821,
+      "tokens": 817,
       "inputTokens": 542,
-      "outputTokens": 279,
+      "outputTokens": 275,
       "costMinor": 5
     },
     "fields": {

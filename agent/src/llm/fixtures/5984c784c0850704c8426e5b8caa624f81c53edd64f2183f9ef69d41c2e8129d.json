@@ -1,0 +1,32 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "Hi",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "openai/gpt-oss-120b",
+    "provider": "groq",
+    "region": "us",
+    "usage": {
+      "tokens": 655,
+      "inputTokens": 517,
+      "outputTokens": 138,
+      "costMinor": 4
+    },
+    "fields": {
+      "service": null,
+      "date": null,
+      "guestCount": null,
+      "locality": null,
+      "package": null,
+      "quantity": null,
+      "hours": null,
+      "distanceKm": null,
+      "language": "en",
+      "intent": "other",
+      "confidenceBps": 10000
+    }
+  }
+}

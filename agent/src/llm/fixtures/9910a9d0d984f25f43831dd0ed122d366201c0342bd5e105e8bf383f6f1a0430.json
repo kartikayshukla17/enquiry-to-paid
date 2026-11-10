@@ -1,0 +1,32 @@
+{
+  "op": "extract",
+  "input": {
+    "text": "We want one bathroom completely remodelled in Greater Noida West. What will it cost?",
+    "schemaVersion": "extract-v3"
+  },
+  "promptHash": "09cc42a3183f996ce813703fd4ed71d5c43073fcdb4736fb8df68c6aa0c96037",
+  "response": {
+    "modelId": "openai/gpt-oss-120b",
+    "provider": "groq",
+    "region": "us",
+    "usage": {
+      "tokens": 751,
+      "inputTokens": 533,
+      "outputTokens": 218,
+      "costMinor": 5
+    },
+    "fields": {
+      "service": "remodel",
+      "date": null,
+      "guestCount": null,
+      "locality": "greater-noida-west",
+      "package": null,
+      "quantity": 1,
+      "hours": null,
+      "distanceKm": null,
+      "language": "en",
+      "intent": "enquiry",
+      "confidenceBps": 9500
+    }
+  }
+}
