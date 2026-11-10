@@ -30,12 +30,19 @@ interface QuoteRef {
   currency: string;
 }
 
+/** What the payment provider's own checkout page shows the customer. Never a raw thread or payment id: those are
+ * internal keys, not something a real customer (or a LinkedIn viewer) should see on a Razorpay/Stripe page. */
+function humanDescription(tenantName: string | undefined, seq: number): string {
+  const who = tenantName?.trim() || "this booking";
+  return `${who} — quote #${seq}`.slice(0, 250);
+}
+
 /** Inside a tenant transaction. The caller has just written (or looked up) the quote ledger row `quote`. */
 export async function issuePaymentLinkInTxn(
   client: PoolClient,
   kernel: KernelBridge,
   provider: PaymentProvider,
-  a: { tenantId: string; threadId: string; quote: QuoteRef; now: string },
+  a: { tenantId: string; threadId: string; quote: QuoteRef; now: string; tenantName?: string },
 ): Promise<IssueResult> {
   if ((await readKillSwitch(client, a.tenantId)).on) return { ok: false, reason: "kill_switch" };
   if (!Number.isInteger(a.quote.amountMinor) || a.quote.amountMinor <= 0) return { ok: false, reason: "not_collectible" };
@@ -44,13 +51,14 @@ export async function issuePaymentLinkInTxn(
   if (existing) {
     return { ok: true, link: { paymentId, url: existing.link_url, amountMinor: a.quote.amountMinor, currency: a.quote.currency, replyText: linkReplyText(existing.link_url, provider.name.endsWith("-sim")) } };
   }
+  const description = humanDescription(a.tenantName, a.quote.seq);
   const link = await provider.createPaymentLink({
     paymentId,
     tenantId: a.tenantId,
     threadId: a.threadId,
     amountMinor: a.quote.amountMinor,
     currency: a.quote.currency,
-    description: `Booking ${a.threadId}`,
+    description,
     now: a.now,
   });
   await client.query(
@@ -63,7 +71,7 @@ export async function issuePaymentLinkInTxn(
     threadId: a.threadId,
     at: a.now,
     type: "payment_link",
-    payload: { paymentId, quoteSeq: a.quote.seq, provider: provider.name, providerLinkId: link.providerLinkId, url: link.url, amountMinor: a.quote.amountMinor, currency: a.quote.currency },
+    payload: { paymentId, quoteSeq: a.quote.seq, provider: provider.name, providerLinkId: link.providerLinkId, url: link.url, amountMinor: a.quote.amountMinor, currency: a.quote.currency, description },
   });
   return { ok: true, link: { paymentId, url: link.url, amountMinor: a.quote.amountMinor, currency: a.quote.currency, replyText: linkReplyText(link.url, provider.name.endsWith("-sim")) } };
 }
@@ -74,7 +82,7 @@ export async function issuePaymentLinkInTxn(
  */
 export async function requestPaymentLink(
   deps: { pool: Pool; kernel: KernelBridge; payments: PaymentProvider },
-  a: { tenantId: string; threadId: string; now: string },
+  a: { tenantId: string; threadId: string; now: string; tenantName?: string },
 ): Promise<IssueResult> {
   return withTenant(deps.pool, a.tenantId, async (client) => {
     if ((await readKillSwitch(client, a.tenantId)).on) return { ok: false, reason: "kill_switch" } as const;
@@ -86,6 +94,6 @@ export async function requestPaymentLink(
     ).rows[0];
     if (!q || typeof q.payload.total !== "number" || typeof q.payload.currency !== "string") return { ok: false, reason: "no_quote" } as const;
     if (typeof q.payload.validUntil === "string" && Date.parse(q.payload.validUntil) < Date.parse(a.now)) return { ok: false, reason: "quote_expired" } as const;
-    return issuePaymentLinkInTxn(client, deps.kernel, deps.payments, { tenantId: a.tenantId, threadId: a.threadId, quote: { seq: q.seq, amountMinor: q.payload.total, currency: q.payload.currency }, now: a.now });
+    return issuePaymentLinkInTxn(client, deps.kernel, deps.payments, { tenantId: a.tenantId, threadId: a.threadId, quote: { seq: q.seq, amountMinor: q.payload.total, currency: q.payload.currency }, now: a.now, tenantName: a.tenantName });
   });
 }

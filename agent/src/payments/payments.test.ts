@@ -36,6 +36,16 @@ describe("payment link in the reply", () => {
     expect(led.rows[0]?.payload).toMatchObject({ amountMinor: res.outcome.total, currency: "INR", url: m![0], provider: "razorpay-sim" });
   });
 
+  it("the link description is human-readable and never leaks the raw thread id to the payment page", async () => {
+    const card = await seedTenant(db.pool, kernel, T1);
+    const res = await ask(db.pool, kernel, provider, T1, card, "pay-thread-desc");
+    if (res.outcome.kind !== "quote") throw new Error("expected a quote");
+    const row = await withTenant(db.pool, T1.id, (c) => c.query("SELECT payload FROM ledger_entries WHERE thread_id='pay-thread-desc' AND type='payment_link'"));
+    const desc = (row.rows[0]?.payload as { description?: string }).description ?? "";
+    expect(desc).not.toContain("pay-thread-desc");
+    expect(desc.length).toBeGreaterThan(0);
+  });
+
   it("no provider configured: the reply carries no link (existing behaviour unchanged)", async () => {
     const card = await seedTenant(db.pool, kernel, T1);
     const res = await ask(db.pool, kernel, undefined, T1, card, "pay-thread-nolink");

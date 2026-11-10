@@ -367,7 +367,7 @@ async function decide(
     const provider = deps.paymentProviders ? await providerForTenant(client, e.tenant.id, deps.paymentProviders) : deps.payments;
     if (outcome.kind === "quote" && provider && !killed) {
       const issued = await issuePaymentLinkInTxn(client, deps.kernel, provider, {
-        tenantId: e.tenant.id, threadId: e.threadId, quote: { seq: ledgerRow.seq, amountMinor: outcome.total, currency: outcome.currency }, now: e.now,
+        tenantId: e.tenant.id, threadId: e.threadId, quote: { seq: ledgerRow.seq, amountMinor: outcome.total, currency: outcome.currency }, now: e.now, tenantName: e.tenant.name,
       });
       if (issued.ok) reply = `${reply}\n\n${issued.link.replyText}`;
     }
