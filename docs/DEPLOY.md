@@ -33,7 +33,7 @@ Everything below is test-mode / fictional data, same as local dev.
 Once both are deployed, every webhook form gets the **Vercel** URL (it proxies to Render), never the Render URL directly:
 
 - **Razorpay:** Account & Settings -> Webhooks -> edit the existing webhook -> URL = `https://<your-vercel-url>/api/webhooks/payments/razorpay`. Secret stays whatever is already in `RAZORPAY_WEBHOOK_SECRET`.
-- **Stripe (when tested live the same way):** Developers -> Webhooks -> Add endpoint -> `https://<your-vercel-url>/api/webhooks/payments/stripe`, events `checkout.session.completed` and `payment_intent.payment_failed`. Stripe will show its own `whsec_...` for this endpoint — update `STRIPE_WEBHOOK_SECRET` on **Render** (not Vercel) to that value and redeploy the agent.
+- **Stripe (when tested live the same way):** Developers -> Webhooks -> Add endpoint -> `https://<your-vercel-url>/api/webhooks/payments/stripe`, events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed` and `charge.refunded` (these are the four event types `agent/src/payments/stripe-sim.ts`'s `parseEvent` actually acts on — **not** `payment_intent.payment_failed`, which this code never looks at and Stripe's own Payment Links/Checkout fulfilment guide does not use either). Stripe will show its own `whsec_...` for this endpoint — update `STRIPE_WEBHOOK_SECRET` on **Render** (not Vercel) to that value and redeploy the agent. Full step-by-step proof checklist: `docs/STRIPE-LIVE-PROOF.md`.
 
 ## 4. Google OAuth redirect URI
 
