@@ -85,10 +85,11 @@ async function addManager(organizationId: string, email: string): Promise<void> 
 }
 
 /** Seeds one thread (with two ledger entries) and one payment directly, the way the real pipeline would. */
-async function seedThread(tenantId: string, label: string, phone = FICTIONAL_PHONE): Promise<{ threadId: string; paymentId: string }> {
+async function seedThread(tenantId: string, label: string, phone = FICTIONAL_PHONE): Promise<{ threadId: string; paymentId: string; quoteLedgerSeq: number }> {
   const customerId = `${tenantId}:cust:${label}`;
   const threadId = `${tenantId}:thread:${label}`;
   const pii = piiKeysFromEnv();
+  let quoteLedgerSeq = 0;
   await withTenant(db.pool, tenantId, async (c) => {
     await c.query("INSERT INTO tenants (id, name) VALUES ($1,$2) ON CONFLICT (id) DO NOTHING", [tenantId, `FICTIONAL: ${tenantId}`]);
     await c.query("INSERT INTO customers (id, tenant_id, phone_hash, phone_enc) VALUES ($1,$2,$3,$4)", [customerId, tenantId, `hash-${label}`, encryptPii(pii, phone)]);
@@ -96,13 +97,14 @@ async function seedThread(tenantId: string, label: string, phone = FICTIONAL_PHO
     const first = await appendEntry(c, kernel, { tenantId, threadId, at: new Date().toISOString(), type: "enquiry", payload: { text: "fictional enquiry" } });
     await appendEntry(c, kernel, { tenantId, threadId, at: new Date().toISOString(), type: "quote", payload: { total: 50000, currency: "INR" } });
     const paymentId = `${threadId}:pay1`;
+    quoteLedgerSeq = first.seq;
     await c.query(
       `INSERT INTO payments (id, tenant_id, thread_id, quote_ledger_seq, provider, provider_link_id, link_url, amount_minor, currency, status, created_at)
        VALUES ($1,$2,$3,$4,'razorpay-sim','link-1','https://pay.example.test/link-1',50000,'INR','created',now())`,
       [paymentId, tenantId, threadId, first.seq],
     );
   });
-  return { threadId, paymentId: `${threadId}:pay1` };
+  return { threadId, paymentId: `${threadId}:pay1`, quoteLedgerSeq };
 }
 
 describe("GET /api/app/* is tenant-scoped to the session's active org, owner-only", () => {
@@ -211,6 +213,7 @@ describe("GET /api/app/* is tenant-scoped to the session's active org, owner-onl
     expect(body.payments[0]).toEqual({
       id: seedA.paymentId,
       threadId: seedA.threadId,
+      quoteLedgerSeq: seedA.quoteLedgerSeq,
       provider: "razorpay-sim",
       amountMinor: 50000,
       currency: "INR",

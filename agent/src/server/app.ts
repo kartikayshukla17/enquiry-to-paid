@@ -113,6 +113,9 @@ export interface AppLedgerEntryView {
 export interface AppPaymentView {
   id: string;
   threadId: string;
+  /** V12: `ledger_entries.seq` of the quote this payment was issued for -- the join key the quote detail
+   *  page's reconciliation view uses to find "the payment(s) for THIS quote" without re-deriving it. */
+  quoteLedgerSeq: number;
   provider: string;
   amountMinor: number;
   currency: string;
@@ -471,18 +474,19 @@ async function getAppThread(pool: Pool, tenantId: string, threadId: string): Pro
 async function listAppPayments(pool: Pool, tenantId: string): Promise<{ payments: AppPaymentView[] }> {
   const { rows } = await withTenant(pool, tenantId, (c) =>
     c.query<{
-      id: string; thread_id: string; provider: string; amount_minor: number; currency: string;
+      id: string; thread_id: string; quote_ledger_seq: number; provider: string; amount_minor: number; currency: string;
       status: string; created_at: Date; collected_at: Date | null;
     }>(
-      `SELECT id, thread_id, provider, amount_minor::int AS amount_minor, currency, status, created_at, collected_at
+      `SELECT id, thread_id, quote_ledger_seq::int AS quote_ledger_seq, provider, amount_minor::int AS amount_minor,
+              currency, status, created_at, collected_at
          FROM payments WHERE tenant_id=$1 ORDER BY created_at DESC`,
       [tenantId],
     ),
   );
   return {
     payments: rows.map((p) => ({
-      id: p.id, threadId: p.thread_id, provider: p.provider, amountMinor: p.amount_minor, currency: p.currency,
-      status: p.status, createdAt: p.created_at.toISOString(), collectedAt: p.collected_at ? p.collected_at.toISOString() : null,
+      id: p.id, threadId: p.thread_id, quoteLedgerSeq: p.quote_ledger_seq, provider: p.provider, amountMinor: p.amount_minor,
+      currency: p.currency, status: p.status, createdAt: p.created_at.toISOString(), collectedAt: p.collected_at ? p.collected_at.toISOString() : null,
     })),
   };
 }
