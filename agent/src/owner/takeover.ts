@@ -5,6 +5,16 @@
  *
  * Lock order, everywhere: the thread's timer row, then the thread row, then the ledger head. The pipeline takes
  * thread -> head and the timer worker takes timer -> thread -> head for this kind, so they cannot deadlock.
+ *
+ * KNOWN GAP (not fixed here -- see takeover.test.ts's deadlock-fix commit for why): both functions' rejection
+ * branches (`opsRow`) write to `ctx.opsThreadId` -- a DIFFERENT thread than the one `lockTimerThenThread` just
+ * locked -- with no lock of its own. That is the same "lock before you touch the ledger" gap `owner/handle.ts`'s
+ * `act()` has. A real fix needs `ctx.opsThreadId` locked before `threadId`, consistently, across every caller;
+ * doing that by taking the lock unconditionally up front (the obvious fix) was tried and reverted -- under this
+ * test's concurrency and the small test pool, it serialises every reply/handback through one row for its whole
+ * transaction and reliably hangs on pool exhaustion rather than ever reaching Postgres's deadlock detector. A
+ * safe fix likely needs the ops-thread write moved after this transaction commits (like handle-enquiry.ts's
+ * "surfaced" append), not a lock held for the whole transaction.
  */
 import type { PoolClient } from "pg";
 import { readKillSwitch } from "../killswitch/index.js";

@@ -126,9 +126,16 @@ export async function handleEnquiry(
     // The ledger says "surfaced" only once the owner outbox really took the message; with no outbox nobody was told, so no row.
     if (deps.ownerOutbox) {
       for (const m of sv.to) await deps.ownerOutbox.send({ tenantId: e.tenant.id, toMemberId: m.id, role: m.role, kind: "customer_message", text: sv.text, at: e.now });
-      await withTenant(deps.pool, e.tenant.id, (c) =>
-        appendEntry(c, deps.kernel, { tenantId: e.tenant.id, threadId: e.threadId, at: e.now, type: "owner_message", payload: { command: "customer_message_surfaced", ref: sv.ref, to: sv.to.map((m) => m.id), enquirySeq: ledgerRow.seq } }),
-      );
+      await withTenant(deps.pool, e.tenant.id, async (c) => {
+        // This is a fresh transaction (the decision's own transaction, and its lock on this thread, already
+        // committed above), so lock the thread again before appending -- the same "lock your target thread
+        // before you touch its ledger" discipline every other ledger write follows. Without it, this append
+        // can deadlock against a concurrent owner message's `lockTimerThenThread`/`act()` FOR UPDATE on this
+        // very thread (this transaction would hold ledger_heads and want the thread row; that one holds the
+        // thread row and wants ledger_heads).
+        await c.query("SELECT 1 FROM threads WHERE id=$1 FOR UPDATE", [e.threadId]);
+        await appendEntry(c, deps.kernel, { tenantId: e.tenant.id, threadId: e.threadId, at: e.now, type: "owner_message", payload: { command: "customer_message_surfaced", ref: sv.ref, to: sv.to.map((m) => m.id), enquirySeq: ledgerRow.seq } });
+      });
     }
     return { reply: "", outcome, ledgerRow, fields, held: true };
   }
