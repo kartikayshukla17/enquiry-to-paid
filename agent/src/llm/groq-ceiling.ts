@@ -15,6 +15,7 @@
  * RPD is roughly ~475 enquiries/day worst case, not 950.
  */
 import type { Pool } from "pg";
+import { LlmError, type ExtractInput, type ExtractResult, type LlmProvider, type WordReplyInput, type WordReplyResult } from "./types.js";
 
 export const DEFAULT_GROQ_DAILY_CEILING = 950;
 
@@ -35,4 +36,47 @@ export async function checkAndBumpGroqUsage(pool: Pool, day: string, ceiling: nu
     [day, ceiling],
   );
   return r.rowCount === 1 ? { ok: true } : { ok: false, reason: "ceiling_reached" };
+}
+
+export interface GroqCeilingOptions {
+  ceiling?: number;
+  /** Clock override for tests; defaults to the real server clock (acceptable here — a production safety
+   * valve, not a fixture-replayed path, the same exception POST /tick (V7) already established). */
+  now?: () => Date;
+}
+
+const todayUtc = (now: () => Date): string => now().toISOString().slice(0, 10);
+
+/**
+ * Wraps a real `LlmProvider` with the global daily Groq ceiling. Before each real `extract`/`wordReply` call,
+ * atomically checks-and-increments `groq_daily_usage` for today (UTC). Once the ceiling is already reached,
+ * throws the EXISTING `LlmError("rate_limited", ...)` WITHOUT calling the underlying provider at all — this
+ * reuses the pipeline's already-tested handling of a Groq rate-limit failure (a `low_confidence` refusal with
+ * the safe holding reply plus escalation for `extract`; a fallback to the plain template reply for
+ * `wordReply`, via `makeReplyWorder`) instead of inventing a parallel error path. Otherwise increments and
+ * calls through to the real provider as normal.
+ *
+ * Both `extract` AND `wordReply` count against the same ceiling: they are two separate real Groq network
+ * calls against the same account-wide request quota (see the module doc comment above).
+ */
+export function withGroqDailyCeiling(provider: LlmProvider, pool: Pool, opts: GroqCeilingOptions = {}): LlmProvider {
+  const ceiling = opts.ceiling ?? DEFAULT_GROQ_DAILY_CEILING;
+  const now = opts.now ?? (() => new Date());
+  const guard = async (): Promise<void> => {
+    const day = todayUtc(now);
+    const r = await checkAndBumpGroqUsage(pool, day, ceiling);
+    if (!r.ok) {
+      throw new LlmError("rate_limited", `Global Groq daily ceiling (${ceiling} requests) reached for ${day}; refusing before calling Groq.`);
+    }
+  };
+  return {
+    async extract(input: ExtractInput): Promise<ExtractResult> {
+      await guard();
+      return provider.extract(input);
+    },
+    async wordReply(input: WordReplyInput): Promise<WordReplyResult> {
+      await guard();
+      return provider.wordReply(input);
+    },
+  };
 }
