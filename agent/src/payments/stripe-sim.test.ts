@@ -4,7 +4,7 @@ import { createTestDb, type TestDb } from "../ledger/test-db.js";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import { withTenant } from "../tenancy/with-tenant.js";
 import { handleWebhook } from "./webhook.js";
-import { STRIPE_TEST_SECRET, stripePaid, stripeSign } from "./provider-kit.js";
+import { STRIPE_TEST_SECRET, stripeAsyncPaymentSucceeded, stripePaid, stripeSign } from "./provider-kit.js";
 import { stripePaymentLinksSim } from "./stripe-sim.js";
 import { ask, NOW, seedTenant } from "./test-helpers.js";
 
@@ -97,7 +97,14 @@ describe("Stripe idempotency keys on the signed body, not on timestamps or heade
     expect(await collectedCount("st-retry")).toBe(1);
   });
 
-  it("only checkout.session.completed with payment_status paid collects; other events are ignored", async () => {
+  it("checkout.session.async_payment_succeeded (a delayed payment method clearing later) collects exactly like checkout.session.completed", async () => {
+    const q = await quoted("st-async-ok");
+    const ev = stripeAsyncPaymentSucceeded({ linkId: q.linkId, tenantId: T.id, amount: q.total });
+    expect((await handleWebhook(deps(), ev.body, ev.headers, NOW)).status).toBe("collected");
+    expect(await collectedCount("st-async-ok")).toBe(1);
+  });
+
+  it("only checkout.session.completed or checkout.session.async_payment_succeeded with payment_status paid collects; other events are ignored", async () => {
     const q = await quoted("st-other");
     const mk = (type: string, status: string) => {
       const base = JSON.parse(stripePaid({ linkId: q.linkId, tenantId: T.id, amount: q.total }).body);

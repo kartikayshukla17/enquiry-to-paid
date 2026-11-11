@@ -97,9 +97,17 @@ export function stripePaymentLinksSim(cfg: StripeSimConfig): PaymentProvider {
           amountMinor: s.amount_total as number, currency: s.currency.toUpperCase(),
         };
       }
-      if (o.type !== "checkout.session.completed") return { kind: "other", eventId: o.id, ...(tenantId && { tenantId }), type: o.type };
-      // A completed session whose payment is not yet paid (delayed methods) is not money received.
-      if (s?.payment_status !== "paid") return { kind: "other", eventId: o.id, ...(tenantId && { tenantId }), type: "checkout.session.completed:unpaid" };
+      // V13 audit fix: `checkout.session.async_payment_succeeded` is Stripe's real event for a delayed
+      // payment method (bank debit, etc.) that CLEARS AFTER the initial `checkout.session.completed`, which
+      // for such methods arrives with `payment_status: "unpaid"` and is correctly not money received below.
+      // Stripe's own fulfilment guide treats the two events identically: same Checkout Session object shape
+      // (`payment_status`, `payment_link`, `payment_intent`, `amount_total`, `currency`, `metadata`). Without
+      // this, a real Payment Link paid by a delayed method would never flip to `collected`.
+      if (o.type !== "checkout.session.completed" && o.type !== "checkout.session.async_payment_succeeded") {
+        return { kind: "other", eventId: o.id, ...(tenantId && { tenantId }), type: o.type };
+      }
+      // A completed/async-succeeded session whose payment is not yet paid is not money received.
+      if (s?.payment_status !== "paid") return { kind: "other", eventId: o.id, ...(tenantId && { tenantId }), type: `${o.type}:unpaid` };
       if (!s || typeof s.payment_link !== "string" || !tenantId || typeof s.payment_intent !== "string" || !Number.isSafeInteger(s.amount_total) || typeof s.currency !== "string") return null;
       return { kind: "paid", eventId: o.id, tenantId, providerLinkId: s.payment_link, providerPaymentId: s.payment_intent, amountMinor: s.amount_total as number, currency: s.currency.toUpperCase() };
     },

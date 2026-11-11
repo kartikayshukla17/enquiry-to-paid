@@ -54,6 +54,23 @@ export function stripePaid(o: PaidOpts) {
   return { body, headers: { "stripe-signature": stripeSign(body, Math.floor(Date.parse(o.now ?? NOW) / 1000)) } };
 }
 
+/**
+ * A Stripe-shaped `checkout.session.async_payment_succeeded` for a Payment Link (V13 audit fix) -- a delayed
+ * payment method (bank debit, etc.) that cleared AFTER the initial `checkout.session.completed` event, which
+ * for such methods arrives with `payment_status: "unpaid"` (not yet money). Stripe's own fulfilment guide
+ * treats this event identically to a paid `checkout.session.completed`: same Checkout Session object shape,
+ * `payment_status: "paid"`, same `payment_link`/`payment_intent`/`amount_total`/`currency`/`metadata`.
+ */
+export function stripeAsyncPaymentSucceeded(o: PaidOpts) {
+  const body = JSON.stringify({
+    id: o.eventId ?? "evt_sim_async_0001",
+    object: "event",
+    type: "checkout.session.async_payment_succeeded",
+    data: { object: { id: "cs_sim_async_0001", object: "checkout.session", payment_link: o.linkId, amount_total: o.amount, currency: (o.currency ?? "INR").toLowerCase(), payment_intent: o.paymentId ?? "pi_sim_async_0001", payment_status: "paid", metadata: { tenant_id: o.tenantId } } },
+  });
+  return { body, headers: { "stripe-signature": stripeSign(body, Math.floor(Date.parse(o.now ?? NOW) / 1000)) } };
+}
+
 /** A Stripe-shaped `checkout.session.async_payment_failed` for a Payment Link (V12) -- the link survives. */
 export function stripeFailed(o: PaidOpts) {
   const body = JSON.stringify({
