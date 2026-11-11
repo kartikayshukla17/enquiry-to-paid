@@ -8,6 +8,7 @@ import { razorpayLive } from "../payments/razorpay-live.js";
 import { razorpaySecretFromEnv, razorpaySim } from "../payments/razorpay-sim.js";
 import { stripeLive } from "../payments/stripe-live.js";
 import { stripePaymentLinksSim, stripeSecretFromEnv } from "../payments/stripe-sim.js";
+import { whatsappConfigFromEnv } from "../whatsapp/config.js";
 import { createAppServer } from "./app.js";
 
 // Demo convenience only (same as `pnpm sim`): throwaway process-local keys when none are configured.
@@ -33,13 +34,22 @@ if (process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET) {
 }
 const defaultProvider = process.env.PAYMENTS_PROVIDER && providers[process.env.PAYMENTS_PROVIDER] ? process.env.PAYMENTS_PROVIDER : providers.razorpay ? "razorpay" : "razorpay-sim";
 
-const server = createAppServer({ pool, kernel, providers, defaultProvider, visitorIpKey: process.env.PHONE_HASH_KEY!, tickSecret: process.env.TICK_SECRET });
+const server = createAppServer({
+  pool,
+  kernel,
+  providers,
+  defaultProvider,
+  visitorIpKey: process.env.PHONE_HASH_KEY!,
+  tickSecret: process.env.TICK_SECRET,
+  whatsapp: whatsappConfigFromEnv(),
+});
 
 // Render (and most PaaS hosts) inject PORT and require binding all interfaces, not just localhost.
 const port = Number(process.env.PORT ?? process.env.AGENT_PORT ?? 4010);
 server.listen(port, "0.0.0.0", () => {
   const google = process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET ? "on" : "off";
+  const whatsapp = process.env.WHATSAPP_APP_SECRET && process.env.WHATSAPP_VERIFY_TOKEN && process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID ? "on" : "off";
   console.error(
-    `agent server on :${port} (LLM_PROVIDER=${process.env.LLM_PROVIDER ?? "fixture"}, LLM_MODE=${process.env.LLM_MODE ?? "replay"}, payments=${defaultProvider}, google=${google})`,
+    `agent server on :${port} (LLM_PROVIDER=${process.env.LLM_PROVIDER ?? "fixture"}, LLM_MODE=${process.env.LLM_MODE ?? "replay"}, payments=${defaultProvider}, google=${google}, whatsapp=${whatsapp})`,
   );
 });

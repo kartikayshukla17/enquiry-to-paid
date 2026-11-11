@@ -104,8 +104,53 @@ The repo's `RazorpayPaymentLinkSim` is a simulated adapter with the same signatu
 
 ---
 
-## 5. Meta WhatsApp Cloud API (T25, not yet)
-Business verification takes about a day or more. Sandbox first: developers.facebook.com → app → add WhatsApp → test number and temporary token for up to 5 recipient numbers. Production needs a verified business, a real number not already on WhatsApp, a permanent system-user token, approved message templates and a webhook with a verify token. A private compliance review is required first. Env: `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`.
+## 5. Meta WhatsApp Cloud API (V2: adapter built; this section is the deploy-time manual step)
+
+The adapter (`agent/src/whatsapp/`) and the `GET`/`POST /webhooks/whatsapp` routes are built and fully tested
+offline (no real Meta credentials needed for tests). What's left is entirely manual, on Meta's side, and
+blocked on the agent being deployed somewhere with a real public URL (there is no `localhost` webhook target).
+
+Business verification takes about a day or more. Sandbox first: developers.facebook.com → app → add WhatsApp
+→ test number and temporary token for up to 5 recipient numbers (manually added in the dashboard — this is
+the sandbox the ticket's "up to 5 numbers manually pre-approved" scope describes, not the public). Production
+needs a verified business, a real number not already on WhatsApp, a permanent system-user token, approved
+message templates and a webhook with a verify token. A private compliance review is required first.
+
+### 5.1 Where to find each credential
+On the app's dashboard (developers.facebook.com → your app):
+- **`WHATSAPP_TOKEN`**: WhatsApp → API Setup → "Temporary access token" (sandbox; expires in ~24h, re-copy as
+  needed) or, for production, System Users → generate a permanent token with `whatsapp_business_messaging`.
+- **`WHATSAPP_PHONE_NUMBER_ID`**: WhatsApp → API Setup → "From" phone number dropdown, the numeric id shown
+  under it (not the phone number itself).
+- **`WHATSAPP_APP_SECRET`**: App Dashboard → Settings → Basic → "App Secret" (click "Show"). This is what
+  signs every webhook delivery (`X-Hub-Signature-256`); never confuse it with the access token above.
+- **`WHATSAPP_VERIFY_TOKEN`**: not issued by Meta — you invent this one yourself (any long random string,
+  e.g. `openssl rand -hex 24`). It only has to match on both sides: what you put in `agent/.env` and what you
+  type into the "Configure Webhooks" box below.
+
+### 5.2 Once deployed: configuring Meta's webhook
+WhatsApp → Configuration → **Webhook → Edit**:
+- **Callback URL**: `https://<your-deployed-agent-url>/webhooks/whatsapp`
+- **Verify token**: exactly the value you put in `WHATSAPP_VERIFY_TOKEN`
+- Click **Verify and save** — this fires the `GET` handshake this ticket's `verifyHandshake` seam handles;
+  a mismatch (wrong URL, wrong token, or the env var unset on the deployment) shows as a failed verification
+  in Meta's UI, not a crash on the server side.
+- **Manage** → subscribe the `messages` webhook field (so customer messages are actually delivered to the
+  callback URL above; the other fields, e.g. message status updates, are not needed and are safely ignored by
+  `parseWhatsAppInbound` either way).
+
+### 5.3 Live proof (manual, blocked on deploy -- same posture as Razorpay's 2026-11-10 and Stripe's V13 live proofs)
+Once the webhook is configured and verified: from one of the up-to-5 manually-approved sandbox numbers, send
+a real text message (e.g. "wedding reception for 150 guests on 12 December 2026") to the sandbox number. It
+should come back with a real priced quote and a real Razorpay/Stripe payment link; paying that link should
+show up as `collected` in the owner console (Phase 1). This is the one step this ticket could not complete
+itself -- everything up to it is built and tested; nothing beyond "deploy, configure, send one real message"
+should be needed.
+
+Env: `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`. Any of
+these left unset on a deployment makes the handshake and the inbound webhook's signature check simply never
+succeed (401/403) -- never a crash -- same fail-closed posture the Razorpay/Stripe simulated adapters already
+have for a blank secret.
 
 ---
 

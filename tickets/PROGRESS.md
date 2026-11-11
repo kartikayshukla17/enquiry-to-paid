@@ -230,3 +230,104 @@ ticket" filesystem mechanic was dropped.
 `pnpm ledger verify` — OK (9 tenants, 102 entries). `pnpm build` — succeeds. One transient, unrelated test
 failure batch was observed mid-session (V10) and did not reproduce on two immediate re-runs; judged
 environmental flakiness, not a regression, and not among any ticket's own new tests.
+
+---
+
+# 2026-11-11 session: V2, WhatsApp Cloud API adapter
+
+Method: single implementer pass (this ticket), `tdd` discipline per seam (5 seams, as pre-confirmed with the
+project owner: `verifyWhatsAppSignature`, `verifyHandshake`, `parseWhatsAppInbound`, `handleWhatsAppWebhook`,
+`sendWhatsAppText`), controller (same session) re-running the full suite before pushing — the smaller-ticket
+review posture this session's own dispatch asked for, not per-ticket worktrees/subagents. Fix rounds: 0 (one
+self-caught bug during the implementer's own red/green loop, see below, fixed before the suite was ever
+reported green). Scope correction honored: V1 (deploy) gates only the final "point Meta's webhook config at a
+live URL" step; everything else was built and fully tested now.
+
+## What shipped
+- `agent/src/whatsapp/`: `signature.ts` (HMAC-SHA256, `sha256=` prefix stripped, hex-shape regex before
+  `timingSafeEqual`, same discipline as `payments/razorpay-sim.ts`), `handshake.ts` (`hub.mode`/
+  `hub.verify_token`/`hub.challenge`, echoes the challenge back verbatim), `inbound.ts` (first real inbound
+  text message out of Meta's envelope; status payloads, non-text types, and malformed JSON all resolve to
+  `{kind:"none"}`, never a throw), `send.ts` (thin Cloud API POST client, `fetch` injected), `webhook.ts` (the
+  orchestrating seam: signature first — reject touches nothing else — then parse, then the SAME `runChat`
+  pipeline `/chat` uses with a fixed default tenant/card, then an injected `send`), `config.ts`
+  (`whatsappConfigFromEnv()`, mirrors `razorpaySecretFromEnv`/`stripeSecretFromEnv`'s env-reading shape but
+  with NO demo-secret fallback — unset credentials make verification simply never succeed, never a crash),
+  `http.ts` (webhook outcome -> HTTP status, mirrors `payments/http.ts`).
+- Wired into `agent/src/server/app.ts`: `GET`/`POST /webhooks/whatsapp`, positioned right after
+  `/webhooks/payments/:provider` in the route-order comment and the route chain; `agent/src/server/serve.ts`
+  constructs `whatsappConfigFromEnv()` and passes it through, plus a `whatsapp=on/off` flag in the startup log
+  line (same style as the existing `google=on/off`).
+- `docs/SETUP.md` section 5 rewritten: where each of the four credentials lives in Meta's dashboard, the exact
+  Callback URL / Verify token to paste into "Configure Webhooks" once deployed, and the live-proof steps left
+  for the project owner. `agent/.env.example`'s WhatsApp block re-labelled from "T25, not yet" to "V2: adapter
+  built".
+- Tests: 37 new (5 whatsapp test files) + 3 new HTTP-layer boundary tests in `server/app.test.ts` (handshake
+  ok/wrong-token, unsigned POST rejected) = 40 new tests, all offline, no real Meta credentials.
+
+## Rulings / judgment calls
+- **`customerRef` derivation**: `customerRefFromPhone()` hashes the raw WhatsApp number with this repo's own
+  `phoneHash` (`security/pii.ts`) BEFORE it ever reaches the pipeline — not just relying on `handle-enquiry.ts`'s
+  own `phoneHash`/`encryptPii` calls on `customerRef`, because that same file also builds `customers.id`
+  directly as `` `${tenantId}:cust:${customerRef}` ``, UNMASKED, from whatever `customerRef` it is given. A
+  raw phone number passed straight through would have landed unmasked in that id column; this is the reason
+  the ticket's own text called out reusing "whatever anonymization/hashing convention this repo already
+  applies" rather than trusting the pipeline to mask it downstream. Proven by a test that scans every stored
+  row (customers.id, phone_hash, every ledger payload) for the raw phone string and finds it nowhere.
+- **"all cards round-trip" proof**: driven directly at seam 4 (`handleWhatsAppWebhook`), parameterized over
+  every `rate-cards/fictional-*.json` file read live off disk (now five, not the ticket's literal "four" —
+  `fictional-banquet-seasonal.json` was added after the ticket text was written; the test fails loudly, via a
+  dedicated guard test, if a new card is added without a known-good field set wired in here), with extraction
+  stubbed via an injected `LlmProvider` (same DI pattern `pipeline/handle-message.test.ts` already
+  established) rather than real/recorded LLM calls — the fixture-replay provider's exact-text-match recordings
+  and the keyword provider's banquet-only service detection both made free-text extraction non-viable to drive
+  deterministically across all five cards offline.
+- **`held`/`acknowledged` result variants**: `EnquiryResult.held` (owner-paused thread) and an empty `reply`
+  (e.g. a repeat of an already-settled consent answer) both mean "nothing may be sent" per the existing
+  pipeline's own contract; `handleWhatsAppWebhook` distinguishes the two in its result type for observability
+  even though the ticket's literal "Done when" only required the signature-reject and all-cards-round-trip
+  cases. `held` has one dedicated integration test (pausing a thread via a direct `UPDATE threads SET
+  state='paused_owner'`, cheaper than a full owner-takeover HTTP setup); `acknowledged` has no dedicated test
+  — it is covered by code review against `EnquiryResult`'s own documented contract and by the existing
+  pipeline's own T18/T19 test suites, not by a new test in this ticket's scope.
+- **Graph API version**: `v24.0` (released 2025-10-08, confirmed live via WebSearch on 2026-11-11 against
+  Meta's own Graph API changelog, which lists `v26.0`, released 2026-07-29, as the current version). Chose a
+  stable, one-year-old version over the bleeding-edge current one, documented with a bump comment and the
+  exact changelog URL to re-check, in `agent/src/whatsapp/send.ts`.
+- **No demo-secret fallback for WhatsApp** (unlike Razorpay/Stripe's `DEMO_WEBHOOK_SECRET`): there is no
+  simulated WhatsApp provider to demo against, so an unset `WHATSAPP_APP_SECRET`/`WHATSAPP_VERIFY_TOKEN` makes
+  `verifyWhatsAppSignature`/`verifyHandshake` fail closed unconditionally (checked before the HMAC/token
+  comparison even runs), rather than falling back to a known-empty key an attacker could replicate.
+- **Self-caught bug during the implementer's own loop**: the first `webhook.test.ts` draft passed `llm:` and
+  `tenantId`/`card` overrides into `handleWhatsAppWebhook`'s deps object without the interface declaring or
+  forwarding them, so tests silently fell through to `runChat`'s real fixture-replay provider and failed on
+  "no recording for extract". Fixed by adding `llm?: LlmProvider` to `WhatsAppWebhookDeps` and forwarding it
+  — caught by the first real test run, not a separate review round.
+
+## Known gaps (none of these block the "Done when" criteria; all are honest scope limits)
+- Non-text message types (image/audio/location/document/etc.) are explicitly out of scope for v1, same as the
+  ticket's own "no separate pricing or wording logic" posture — `parseWhatsAppInbound` resolves them to
+  `{kind:"none"}` and they are silently acknowledged, never surfaced to the owner.
+- Temporary vs. permanent WhatsApp token: `docs/SETUP.md` documents both (sandbox temporary token expires
+  ~24h; production needs a System User's permanent token) but the code has no expiry-awareness of its own —
+  a send with an expired token just surfaces as `sendWhatsAppText`'s ordinary `{ok:false, error}` path, caught
+  by the server's outer try/catch like any other webhook-processing error.
+- `acknowledged` (empty-reply, nothing-new-to-say) path has no dedicated new test (see Rulings above).
+- The live end-to-end proof (a real sandbox number, a real deployed webhook, a real quote and a real
+  Razorpay/Stripe payment collected) is the one step genuinely blocked on deploy — see `docs/SETUP.md` §5.3.
+
+## Flagged for the project owner (manual follow-up, same category as Razorpay's/Stripe's live proofs)
+1. Deploy the agent (V1, out of scope here) so there is a real public HTTPS URL for Meta's webhook.
+2. Set `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` on the
+   deployment (values already sit in the owner's local `agent/.env`, gitignored, not in this worktree).
+3. Meta dashboard → WhatsApp → Configuration → Webhook: Callback URL `https://<deployed-url>/webhooks/
+   whatsapp`, Verify token = the same `WHATSAPP_VERIFY_TOKEN` value, click Verify and save, then subscribe the
+   `messages` field. Full steps in `docs/SETUP.md` §5.2.
+4. Text the sandbox number from one of the up-to-5 manually-approved phones, confirm a real priced quote
+   comes back, pay the real payment link, confirm `collected` in the owner console. `docs/SETUP.md` §5.3.
+
+## Final status
+`pnpm test` — 74 agent/site vitest files, 877 tests (40 new), + the full Rust kernel `cargo test` suite — all
+green. `pnpm lint` (eslint + agent typecheck) — clean. `pnpm adversarial` — 50/50 refused or answered
+honestly, 0 quotes issued (unchanged — this ticket added no new pricing/wording logic). `pnpm ledger verify` —
+OK (9 tenants, 102 entries, unchanged). `pnpm build` — succeeds.

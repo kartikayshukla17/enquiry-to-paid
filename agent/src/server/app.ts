@@ -2,8 +2,9 @@
  * The agent as one deployable HTTP process: Better Auth, the simulator/chat pipeline, payment webhooks and the
  * public playground, all in one server so a single host (e.g. one Render service) gives Razorpay/Stripe/the site
  * a single stable URL. Routes, in order: /api/auth/* (Better Auth) -> /api/app/* (tenant-scoped owner-console
- * read API, V3b) -> /health -> /tick (V7) -> /webhooks/payments/:provider -> /payment-status -> /feedback ->
- * /chat -> 404. Binds to all interfaces; the caller picks the port.
+ * read API, V3b) -> /health -> /tick (V7) -> /webhooks/payments/:provider -> /webhooks/whatsapp (V2, GET
+ * handshake + POST inbound) -> /payment-status -> /feedback -> /chat -> 404. Binds to all interfaces; the
+ * caller picks the port.
  */
 import { timingSafeEqual } from "node:crypto";
 import { readdirSync } from "node:fs";
@@ -31,6 +32,11 @@ import { checkAndBumpUsage, hashVisitorIp, recordFeedback } from "../simulator/p
 import { REPO_ROOT } from "../ratecard/paths.js";
 import { runDueTimers } from "../timers/run.js";
 import { withTenant } from "../tenancy/with-tenant.js";
+import type { WhatsAppConfig } from "../whatsapp/config.js";
+import { verifyHandshake } from "../whatsapp/handshake.js";
+import { whatsappWebhookHttpStatus } from "../whatsapp/http.js";
+import { sendWhatsAppText } from "../whatsapp/send.js";
+import { handleWhatsAppWebhook } from "../whatsapp/webhook.js";
 import { describeLedgerEntry } from "./describe-ledger-entry.js";
 import { maskCustomerRef } from "./mask-customer-ref.js";
 
@@ -505,6 +511,12 @@ export interface AppServerDeps {
    * it is refused outright until an operator sets the secret.
    */
   tickSecret?: string;
+  /**
+   * V2: the four WhatsApp Cloud API credentials (`whatsappConfigFromEnv()`), or undefined on a deployment
+   * that has not configured WhatsApp yet. Undefined (or any individual field being `""`) means `/webhooks/
+   * whatsapp` always 403s/401s -- it never crashes, same posture as `tickSecret` being unset for `/tick`.
+   */
+  whatsapp?: WhatsAppConfig;
 }
 
 /**
@@ -637,6 +649,39 @@ export function createAppServer(deps: AppServerDeps): Server {
         const r = await handleProviderWebhook({ pool: deps.pool, kernel: deps.kernel, providers: deps.providers }, hook[1]!, raw, headers, new Date().toISOString());
         console.error(`[webhook] ${hook[1]} -> ${r.status}${"reason" in r ? ` (${r.reason})` : ""}`);
         return send(webhookHttpStatus(r), { status: r.status });
+      }
+      // V2: WhatsApp Cloud API -- GET is Meta's one-time verify-token handshake, POST is the real webhook
+      // (customer messages in, a pipeline reply out). `deps.whatsapp` absent (or any of its fields `""`,
+      // unset env) means BOTH routes fail closed -- `verifyHandshake`/`handleWhatsAppWebhook` already treat
+      // an empty secret/token as "never succeeds", never a crash.
+      if (req.method === "GET" && req.url?.startsWith("/webhooks/whatsapp")) {
+        const cfg = deps.whatsapp ?? { appSecret: "", verifyToken: "", token: "", phoneNumberId: "" };
+        const q = new URL(req.url, "http://x").searchParams;
+        const query: Record<string, string | undefined> = { "hub.mode": q.get("hub.mode") ?? undefined, "hub.verify_token": q.get("hub.verify_token") ?? undefined, "hub.challenge": q.get("hub.challenge") ?? undefined };
+        const r = verifyHandshake(query, cfg.verifyToken);
+        console.error(`[webhook] whatsapp handshake -> ${r.ok ? "ok" : "rejected"}`);
+        if (!r.ok) return send(403, { error: "forbidden" });
+        res.writeHead(200, { "content-type": "text/plain" });
+        return res.end(r.challenge);
+      }
+      if (req.method === "POST" && req.url === "/webhooks/whatsapp") {
+        const cfg = deps.whatsapp ?? { appSecret: "", verifyToken: "", token: "", phoneNumberId: "" };
+        const raw = await readBody(req, MAX_WEBHOOK_BODY);
+        const headers = Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v]));
+        const r = await handleWhatsAppWebhook(
+          {
+            pool: deps.pool,
+            appSecret: cfg.appSecret,
+            send: (to, body) => sendWhatsAppText({ token: cfg.token, phoneNumberId: cfg.phoneNumberId }, to, body),
+            paymentProviders: deps.providers,
+            paymentProvider: deps.defaultProvider,
+          },
+          raw,
+          headers,
+          new Date().toISOString(),
+        );
+        console.error(`[webhook] whatsapp -> ${r.status}${"reason" in r ? ` (${r.reason})` : ""}`);
+        return send(whatsappWebhookHttpStatus(r), { status: r.status });
       }
       if (req.method === "GET" && req.url?.startsWith("/payment-status")) {
         const q = new URL(req.url, "http://x").searchParams;

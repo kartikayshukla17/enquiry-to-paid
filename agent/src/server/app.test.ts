@@ -21,6 +21,7 @@ beforeAll(async () => {
     defaultProvider: "razorpay-sim",
     visitorIpKey: "test-visitor-ip-key",
     auth: { secret: "test-secret-test-secret-test-secret-1234", baseURL: "http://localhost:3000", google: { clientId: "cid.apps.googleusercontent.com", clientSecret: "x" } },
+    whatsapp: { appSecret: "test-wa-app-secret", verifyToken: "test-wa-verify-token", token: "unused-in-tests", phoneNumberId: "unused-in-tests" },
   });
   await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
@@ -77,6 +78,21 @@ describe("the merged agent server (auth + simulator + payments in one process)",
   it("rejects an unsigned payment webhook and an unknown provider", async () => {
     expect((await post("/webhooks/payments/razorpay-sim", {})).status).toBe(401);
     expect((await post("/webhooks/payments/not-a-provider", {})).status).toBe(404);
+  });
+
+  it("echoes the challenge back verbatim on a correct WhatsApp verify-token handshake", async () => {
+    const r = await fetch(`${base}/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=test-wa-verify-token&hub.challenge=12345`);
+    expect(r.status).toBe(200);
+    expect(await r.text()).toBe("12345");
+  });
+
+  it("rejects a WhatsApp handshake with the wrong verify token", async () => {
+    const r = await fetch(`${base}/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=12345`);
+    expect(r.status).toBe(403);
+  });
+
+  it("rejects an unsigned WhatsApp inbound webhook before touching the pipeline", async () => {
+    expect((await post("/webhooks/whatsapp", { entry: [] })).status).toBe(401);
   });
 
   it("404s anything else", async () => {
