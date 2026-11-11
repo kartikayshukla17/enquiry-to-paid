@@ -1,5 +1,7 @@
 import { fileURLToPath } from "node:url";
+import type { Pool } from "pg";
 import { createRecordingProvider, createReplayProvider } from "./fixture/index.js";
+import { DEFAULT_GROQ_DAILY_CEILING, withGroqDailyCeiling } from "./groq-ceiling.js";
 import { createGroqProvider, DEFAULT_GROQ_MODEL } from "./groq/index.js";
 import { createKeywordProvider, KEYWORD_MODEL_ID } from "./providers/keyword.js";
 import { WEAK_MODEL_ID, withModelId, withWeakHinglishNumbers } from "./providers/weak.js";
@@ -21,6 +23,14 @@ export interface ProviderOverrides {
    * `false` skips the guard (tests and the eval harness only; it is never reachable from env).
    */
   registry?: Registry | false;
+  /**
+   * V10: when set AND a real Groq provider is about to be constructed/used (name==="groq" and
+   * mode!=="replay" — see the `live` branch below), the provider is wrapped with `withGroqDailyCeiling` so
+   * every real `extract`/`wordReply` network call counts against the global free-tier daily ceiling
+   * (`GROQ_DAILY_CEILING`, default `DEFAULT_GROQ_DAILY_CEILING`). Omitted (as in every existing call site,
+   * every test, the eval harness, the adversarial suite): no DB access, behavior unchanged.
+   */
+  pool?: Pool;
 }
 
 type Env = Record<string, string | undefined>;
@@ -66,5 +76,10 @@ export function createProvider(env: Env = process.env, o: ProviderOverrides = {}
         ...(o.fetch && { fetch: o.fetch }),
       });
     })();
-  return mode === "record" ? createRecordingProvider(live, dir) : live;
+  // V10: a real Groq network call (record or live) counts against the global free-tier daily ceiling, never
+  // fixture/keyword/replay (those all returned above). `o.pool` absent (every existing call site that
+  // doesn't pass it): unchanged behavior, no DB access.
+  const ceiling = Number(env.GROQ_DAILY_CEILING ?? DEFAULT_GROQ_DAILY_CEILING);
+  const guarded = o.pool ? withGroqDailyCeiling(live, o.pool, { ceiling }) : live;
+  return mode === "record" ? createRecordingProvider(guarded, dir) : guarded;
 }

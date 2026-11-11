@@ -49,7 +49,11 @@ export async function runChat(text: string, opts: ChatOptions): Promise<{ reply:
       kernel,
       notifier: opts.notifier ?? createLogNotifier(),
       ownerOutbox: opts.ownerOutbox ?? collectingOutbox(sink),
-      llm: opts.llm ?? createProvider(),
+      // V10: pass the pool so a real Groq provider (LLM_PROVIDER=groq, LLM_MODE=record|live) is wrapped with
+      // the global daily ceiling. This is the deployed playground's own /chat route path; fixture/keyword/
+      // replay providers (every test, eval, adversarial run) are unaffected (createProvider never touches
+      // the pool for those).
+      llm: opts.llm ?? createProvider(process.env, { pool: opts.pool }),
       wordReplies: opts.wordReplies ?? process.env.LLM_WORD_REPLIES === "1",
       ...(opts.paymentProviders && opts.paymentProvider && { paymentProviders: opts.paymentProviders }),
     },
