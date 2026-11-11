@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { EmptyState, ErrorState, LoadingState } from "@/components/app-shell/states";
@@ -49,39 +49,85 @@ function formatTimestamp(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
+/** V6: states where the owner can take over -- `refused` (the agent is waiting on the owner) and
+ *  `paused_owner` (already taken over). Any other state has nothing to take over. */
+const TAKEOVER_STATES = new Set(["refused", "paused_owner"]);
+
 /**
  * V4: the thread detail screen. Shows the thread's state and masked customer reference, then every
  * ledger entry oldest-first (the agent already returns them `seq ASC`), each with its raw row
  * (type, timestamp, seq, payload — an internal owner tool, so the owner seeing the raw ledger
  * payload is the point) alongside the same one-line description the inbox list uses for its last
  * message. Does not attempt V5's chain-verify badge or structured quote-line rendering.
+ *
+ * V6 adds the takeover/reply/handback controls: a reply box (+ Send) while the thread is `refused`
+ * or `paused_owner` -- calling POST .../takeover, which both takes the thread over and sends the
+ * reply, the same "take over and reply" action the owner-channel's `ownerReplyInTxn` already is --
+ * and a "Hand back" button (POST .../handback) only while `paused_owner`. Either action refetches
+ * this same thread detail so the new ledger rows and state show up, rather than guessing locally.
  */
 export default function ThreadDetailPage() {
   const params = useParams<{ id: string }>();
   const threadId = params.id;
   const [state, setState] = useState<DetailState>(undefined);
+  const [replyText, setReplyText] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/app/threads/${encodeURIComponent(threadId)}`);
+      if (r.status === 404) {
+        setState("not_found");
+        return;
+      }
+      if (!r.ok) throw new Error("request failed");
+      const j = (await r.json()) as ThreadDetailResponse;
+      setState(j);
+    } catch {
+      setState(null);
+    }
+  }, [threadId]);
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const r = await fetch(`/api/app/threads/${encodeURIComponent(threadId)}`);
-        if (r.status === 404) {
-          if (!cancelled) setState("not_found");
-          return;
-        }
-        if (!r.ok) throw new Error("request failed");
-        const j = (await r.json()) as ThreadDetailResponse;
-        if (!cancelled) setState(j);
-      } catch {
-        if (!cancelled) setState(null);
-      }
-    }
     void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [threadId]);
+  }, [load]);
+
+  async function sendReply() {
+    const text = replyText.trim();
+    if (!text || actionBusy) return;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      const r = await fetch(`/api/app/threads/${encodeURIComponent(threadId)}/takeover`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!r.ok) throw new Error("request failed");
+      setReplyText("");
+      await load();
+    } catch {
+      setActionError("Could not send the reply. Check your connection and try again.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handBack() {
+    if (actionBusy) return;
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      const r = await fetch(`/api/app/threads/${encodeURIComponent(threadId)}/handback`, { method: "POST" });
+      if (!r.ok) throw new Error("request failed");
+      await load();
+    } catch {
+      setActionError("Could not hand back this thread. Check your connection and try again.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
 
   if (state === undefined) return <LoadingState label="Loading thread…" />;
   if (state === null) return <ErrorState title="Could not load this thread" body="Check your connection and reload the page." />;
@@ -97,6 +143,8 @@ export default function ThreadDetailPage() {
   }
 
   const { thread, entries } = state;
+  const canTakeOver = TAKEOVER_STATES.has(thread.state);
+  const isPaused = thread.state === "paused_owner";
 
   return (
     <div className="flex flex-col gap-4">
@@ -111,6 +159,47 @@ export default function ThreadDetailPage() {
         </div>
         <p className="text-sm text-ink">{thread.lastMessageSummary ?? "No messages yet"}</p>
       </div>
+
+      {canTakeOver && (
+        <div className="panel flex flex-col gap-2 border-2 border-ink p-4">
+          <label htmlFor="owner-reply" className="font-display text-xs uppercase tracking-[0.04em] text-ink/70">
+            {isPaused ? "Send another reply" : "Take over and reply"}
+          </label>
+          <textarea
+            id="owner-reply"
+            value={replyText}
+            onChange={(e) => setReplyText(e.target.value)}
+            rows={3}
+            placeholder="Type a reply to send to the customer…"
+            className="border-2 border-ink bg-board p-2 text-sm text-ink"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void sendReply()}
+              disabled={actionBusy || !replyText.trim()}
+              className="font-display border-2 border-ink bg-gold px-4 py-2 text-sm uppercase tracking-[0.03em] text-ink disabled:opacity-50"
+            >
+              Send
+            </button>
+            {isPaused && (
+              <button
+                type="button"
+                onClick={() => void handBack()}
+                disabled={actionBusy}
+                className="font-display border-2 border-ink bg-board px-4 py-2 text-sm uppercase tracking-[0.03em] text-ink hover:bg-board-dim disabled:opacity-50"
+              >
+                Hand back
+              </button>
+            )}
+          </div>
+          {actionError && (
+            <p role="alert" className="text-sm text-signal-deep">
+              {actionError}
+            </p>
+          )}
+        </div>
+      )}
 
       {entries.length === 0 ? (
         <EmptyState title="No messages yet" body="Nothing has happened on this thread yet." />
