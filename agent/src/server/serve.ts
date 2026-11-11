@@ -33,7 +33,7 @@ if (process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET) {
 }
 const defaultProvider = process.env.PAYMENTS_PROVIDER && providers[process.env.PAYMENTS_PROVIDER] ? process.env.PAYMENTS_PROVIDER : providers.razorpay ? "razorpay" : "razorpay-sim";
 
-const server = createAppServer({ pool, kernel, providers, defaultProvider, visitorIpKey: process.env.PHONE_HASH_KEY! });
+const server = createAppServer({ pool, kernel, providers, defaultProvider, visitorIpKey: process.env.PHONE_HASH_KEY!, tickSecret: process.env.TICK_SECRET });
 
 // Render (and most PaaS hosts) inject PORT and require binding all interfaces, not just localhost.
 const port = Number(process.env.PORT ?? process.env.AGENT_PORT ?? 4010);

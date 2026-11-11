@@ -2,21 +2,26 @@
  * The agent as one deployable HTTP process: Better Auth, the simulator/chat pipeline, payment webhooks and the
  * public playground, all in one server so a single host (e.g. one Render service) gives Razorpay/Stripe/the site
  * a single stable URL. Routes, in order: /api/auth/* (Better Auth) -> /api/app/* (tenant-scoped owner-console
- * read API, V3b) -> /health -> /webhooks/payments/:provider -> /payment-status -> /feedback -> /chat -> 404.
- * Binds to all interfaces; the caller picks the port.
+ * read API, V3b) -> /health -> /tick (V7) -> /webhooks/payments/:provider -> /payment-status -> /feedback ->
+ * /chat -> 404. Binds to all interfaces; the caller picks the port.
  */
+import { timingSafeEqual } from "node:crypto";
 import { readdirSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { toNodeHandler } from "better-auth/node";
 import type { Pool, PoolClient } from "pg";
 import { createAuth, type AuthOptions } from "../auth/index.js";
+import { collectingChaserOutbox, type ChaserMessage } from "../chasers/types.js";
 import { describeReason } from "../escalation/index.js";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import { verifyLedger } from "../ledger/index.js";
 import type { Member } from "../owner/members.js";
 import { ensureOpsThread } from "../owner/handle.js";
+import { sendDailyDigest } from "../owner/inbound.js";
+import { pushRecipients } from "../owner/members.js";
 import { listOpenRefusals } from "../owner/queue.js";
 import { handbackInTxn, ownerReplyInTxn, threadRef } from "../owner/takeover.js";
+import { collectingOutbox, type OwnerOutgoing } from "../owner/types.js";
 import { webhookHttpStatus } from "../payments/http.js";
 import type { ProviderRegistry } from "../payments/registry.js";
 import { handleProviderWebhook } from "../payments/webhook.js";
@@ -24,6 +29,7 @@ import { decryptPii, piiKeysFromEnv, type PiiKeys } from "../security/pii.js";
 import { runChat } from "../simulator/chat.js";
 import { checkAndBumpUsage, hashVisitorIp, recordFeedback } from "../simulator/playground.js";
 import { REPO_ROOT } from "../ratecard/paths.js";
+import { runDueTimers } from "../timers/run.js";
 import { withTenant } from "../tenancy/with-tenant.js";
 import { describeLedgerEntry } from "./describe-ledger-entry.js";
 import { maskCustomerRef } from "./mask-customer-ref.js";
@@ -489,6 +495,62 @@ export interface AppServerDeps {
   /** HMAC key for playground visitor-IP hashing; never the raw IP is stored. */
   visitorIpKey: string;
   auth?: AuthOptions;
+  /**
+   * V7: the shared secret `POST /tick` requires (env `TICK_SECRET`). Undefined (not configured on this
+   * deployment) means `/tick` always 401s -- due work is never silently skipped as if nothing were due,
+   * it is refused outright until an operator sets the secret.
+   */
+  tickSecret?: string;
+}
+
+/**
+ * V7: `POST /tick`'s shared-secret check -- `Authorization: Bearer <TICK_SECRET>`, compared in constant
+ * time (`timingSafeEqual`, same discipline the payment webhook signature checks use in
+ * `payments/*-sim.ts`). `timingSafeEqual` throws on a length mismatch rather than returning false, so
+ * the length check runs first; this test is not itself constant-time, but it leaks only the attempted
+ * secret's length, never anything about its content. No `secret` configured on this deployment (the env
+ * var `TICK_SECRET` unset) always fails closed, whatever the header says.
+ */
+function tickAuthorized(req: IncomingMessage, secret: string | undefined): boolean {
+  if (!secret) return false;
+  const header = req.headers.authorization;
+  if (typeof header !== "string" || !header.startsWith("Bearer ")) return false;
+  const provided = Buffer.from(header.slice("Bearer ".length), "utf8");
+  const expected = Buffer.from(secret, "utf8");
+  return provided.length === expected.length && timingSafeEqual(provided, expected);
+}
+
+/**
+ * V7: the owner digest's due-check, for every tenant that exists (not just ones with recent activity).
+ * `pool` is the owner-role connection (bypasses RLS, same as `verifyLedger`/`killswitch` -- enumerating
+ * tenant ids and the latest `digest_sent` entry per tenant are read-only, cross-tenant lookups, not a
+ * tenant-scoped write). A tenant is skipped, with no digest and no ledger entry, when its last
+ * `digest_sent` is under 24h old (by the server's real clock) OR it has nobody to push to at all
+ * (`pushRecipients` empty) -- `sendDailyDigest` itself has no idempotency and no recipient check, so
+ * both gates live here, before it is ever called.
+ */
+async function sendDueDigests(pool: Pool, kernel: KernelBridge, now: string): Promise<number> {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const tenants = (await pool.query<{ id: string; name: string }>("SELECT id, name FROM tenants ORDER BY id")).rows;
+  const lastSent = new Map(
+    (
+      await pool.query<{ tenant_id: string; last_sent: Date }>(
+        "SELECT tenant_id, MAX(at) AS last_sent FROM ledger_entries WHERE type='owner_message' AND payload->>'command'='digest_sent' GROUP BY tenant_id",
+      )
+    ).rows.map((r) => [r.tenant_id, r.last_sent]),
+  );
+  const nowMs = Date.parse(now);
+  let sent = 0;
+  for (const tenant of tenants) {
+    const last = lastSent.get(tenant.id);
+    if (last && nowMs - last.getTime() < DAY_MS) continue; // sent recently enough: not due
+    const recipients = await withTenant(pool, tenant.id, (c) => pushRecipients(c, tenant.id));
+    if (recipients.length === 0) continue; // nobody to send it to: no entry, not "sent to nobody"
+    const sink: OwnerOutgoing[] = [];
+    await sendDailyDigest({ pool, outbox: collectingOutbox(sink), kernel }, { tenant, now });
+    sent += 1;
+  }
+  return sent;
 }
 
 export function createAppServer(deps: AppServerDeps): Server {
@@ -552,6 +614,17 @@ export function createAppServer(deps: AppServerDeps): Server {
       }
       if (req.method === "GET" && req.url === "/health") {
         return send(200, { ok: true, provider: process.env.LLM_PROVIDER ?? "fixture", mode: process.env.LLM_MODE ?? "replay" });
+      }
+      // V7: called by the GitHub Actions schedule (no browser session), authenticated by shared secret instead
+      // of the cookie-based /api/app/* gate. This is the ONLY place the deployed process ever runs due timers
+      // or the owner digest -- nothing else here starts a background loop of its own (see no-scheduler.test.ts).
+      if (req.method === "POST" && req.url === "/tick") {
+        if (!tickAuthorized(req, deps.tickSecret)) return send(401, { error: "unauthorized" });
+        const now = new Date().toISOString(); // the one place allowed to read the real clock directly
+        const sink: ChaserMessage[] = [];
+        const result = await runDueTimers(deps.pool, now, { kernel: deps.kernel, chaserOutbox: collectingChaserOutbox(sink) });
+        const digestsSent = await sendDueDigests(deps.pool, deps.kernel, now);
+        return send(200, { processed: result.processed, expiredHolds: result.expiredHolds.length, chasersSent: result.chasersSent.length, digestsSent });
       }
       const hook = req.method === "POST" ? /^\/webhooks\/payments\/([a-z-]{3,20})$/.exec(req.url ?? "") : null;
       if (hook) {

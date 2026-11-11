@@ -1,0 +1,38 @@
+name: tick
+# V7: Render's free tier has no background-worker or cron option at all (confirmed via Render's own staff,
+# not assumed), so scheduled work (hold expiry, chaser sends, the owner digest) is driven from here instead:
+# a thin scheduled HTTP call to the deployed agent's POST /tick, which does all the real work itself
+# (see agent/src/server/app.ts and agent/src/timers/run.ts). Disabling this workflow is the only thing that
+# stops scheduled work -- nothing in the deployed service runs it on a timer of its own
+# (agent/src/server/no-scheduler.test.ts proves that structurally).
+on:
+  schedule:
+    # Every 5 minutes -- GitHub Actions' own documented minimum granularity for `schedule`. Honesty note:
+    # GitHub's scheduler is NOT to-the-minute guaranteed under load (their own docs say scheduled workflows
+    # can be delayed or dropped when the queue is busy); this is the PRD's own stated risk for this slice,
+    # and it is accepted, not hidden -- a few minutes' slack on hold expiry/chasers/the digest is harmless.
+    - cron: "*/5 * * * *"
+  # Lets a human trigger a run manually -- the manual proof step this ticket cannot complete itself (V1,
+  # deploying the agent, is out of scope for this session; someone with dashboard access does that later,
+  # then uses this to confirm /tick is reachable and the secrets below are set correctly).
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      # Both are GitHub repo secrets that do NOT exist yet as of this ticket. The owner sets them after
+      # deploying the agent (V1, out of scope here):
+      #   AGENT_TICK_URL -- the full https://.../tick URL of the deployed agent.
+      #   TICK_SECRET    -- the same shared secret configured as the agent's TICK_SECRET env var
+      #                     (see agent/.env.example); sent back as "Authorization: Bearer <secret>".
+      # Until both are set, this step has nothing to call and the job fails loudly (curl -f) rather than
+      # silently doing nothing -- that failure is the signal to go set them.
+      - name: Hit the deployed agent's /tick
+        run: |
+          curl -f -sS -X POST "${AGENT_TICK_URL}" \
+            -H "Authorization: Bearer ${TICK_SECRET}" \
+            -o /dev/null -w 'tick -> HTTP %{http_code}\n'
+        env:
+          AGENT_TICK_URL: ${{ secrets.AGENT_TICK_URL }}
+          TICK_SECRET: ${{ secrets.TICK_SECRET }}
