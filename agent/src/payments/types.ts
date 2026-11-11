@@ -20,9 +20,22 @@ export interface PaymentLink {
   url: string;
 }
 
-/** What a verified webhook body means, provider-neutral. */
+/**
+ * What a verified webhook body means, provider-neutral.
+ *
+ * `failed` (V12): a failed ATTEMPT against a payment link -- the link itself is not consumed, so this is
+ * looked up the same way `paid` is (`providerLinkId`); `providerPaymentId` is omitted when the provider's
+ * failed-attempt payload does not carry a durable payment id for it (that is the provider's own choice, not
+ * something `handleWebhook` needs).
+ *
+ * `refunded` (V12): happens AFTER a successful collection. Real providers' refund payloads key off the
+ * ORIGINAL payment id, not the payment link id (Razorpay's `refund.entity` carries `payment_id`, not a link
+ * id; Stripe's `charge.refunded` carries `payment_intent`) -- so this is looked up by `providerPaymentId`.
+ */
 export type ParsedPaymentEvent =
   | { kind: "paid"; eventId: string; tenantId: string; providerLinkId: string; providerPaymentId: string; amountMinor: number; currency: string }
+  | { kind: "failed"; eventId: string; tenantId: string; providerLinkId: string; providerPaymentId?: string; amountMinor: number; currency: string }
+  | { kind: "refunded"; eventId: string; tenantId: string; providerPaymentId: string; refundId: string; amountMinor: number; currency: string }
   | { kind: "other"; eventId: string; tenantId?: string; type: string };
 
 export interface PaymentProvider {

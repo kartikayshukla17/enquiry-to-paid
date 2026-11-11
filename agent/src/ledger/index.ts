@@ -5,7 +5,8 @@ export type LedgerType =
   | "enquiry" | "extraction" | "quote" | "refusal" | "hold" | "owner_message"
   | "payment_link" | "collected" | "chase" | "correction" | "disclosure"
   | "rate_card_approved" | "rate_card_rejected" | "kill_switch_changed" | "payment_mismatch"
-  | "owner_quote" | "consent" | "stop" | "chaser_sent" | "payment_held_for_review";
+  | "owner_quote" | "consent" | "stop" | "chaser_sent" | "payment_held_for_review"
+  | "payment_failed" | "payment_refunded";
 
 export interface LedgerRow {
   /** Global row id (primary key); what `corrects` points at. */

@@ -94,4 +94,44 @@ describe.each(KITS.map((k) => [k.name, k] as [string, ProviderKit]))("PaymentPro
     expect(await handleWebhook(deps(), cross.body, cross.headers, NOW)).toMatchObject({ status: "ignored", reason: "unknown_link" });
     expect((await state("c-6")).collected).toEqual([]);
   });
+
+  // V12: payment.failed / refund events, on both providers via the shared kit.
+  it("a signed failed-attempt event does not consume the link: payments.status is untouched, thread stays quoted, a distinct payment_failed entry is written, and the SAME link still collects afterward", async () => {
+    const q = await quoted("c-7");
+    const f = kit.failed({ linkId: q.linkId, tenantId: T.id, amount: q.total, eventId: "evt_c7_fail" });
+    const r = await handleWebhook(deps(), f.body, f.headers, NOW);
+    expect(r).toMatchObject({ status: "failed", threadId: tid("c-7") });
+    const failedRows = await withTenant(db.pool, T.id, (c) => c.query("SELECT payload FROM ledger_entries WHERE thread_id=$1 AND type='payment_failed'", [tid("c-7")]));
+    expect(failedRows.rows).toHaveLength(1);
+    expect(failedRows.rows[0].payload).toMatchObject({ amountMinor: q.total, currency: "INR", eventId: "evt_c7_fail" });
+    const before = await withTenant(db.pool, T.id, (c) => c.query("SELECT status FROM payments WHERE thread_id=$1", [tid("c-7")]));
+    expect(before.rows[0].status).toBe("created");
+    expect((await state("c-7")).thread).toBe("quoted");
+    const ok = kit.paid({ linkId: q.linkId, tenantId: T.id, amount: q.total, eventId: "evt_c7_ok" });
+    expect((await handleWebhook(deps(), ok.body, ok.headers, NOW)).status).toBe("collected");
+    expect((await verifyLedger(db.pool, kernel)).ok).toBe(true);
+  });
+
+  it("a signed refund event on an already-collected payment writes a distinct payment_refunded entry, moves payments.status to refunded (never touching threads.state), and the chain still verifies", async () => {
+    const q = await quoted("c-8");
+    const payId = `pay_c8_${kit.name}`;
+    const paid = kit.paid({ linkId: q.linkId, tenantId: T.id, amount: q.total, eventId: "evt_c8_paid", paymentId: payId });
+    expect((await handleWebhook(deps(), paid.body, paid.headers, NOW)).status).toBe("collected");
+    const threadBefore = (await state("c-8")).thread;
+    const refund = kit.refunded({ paymentId: payId, tenantId: T.id, amount: q.total, eventId: "evt_c8_refund" });
+    const r = await handleWebhook(deps(), refund.body, refund.headers, NOW);
+    expect(r).toMatchObject({ status: "refunded", threadId: tid("c-8") });
+    const refundedRows = await withTenant(db.pool, T.id, (c) => c.query("SELECT payload FROM ledger_entries WHERE thread_id=$1 AND type='payment_refunded'", [tid("c-8")]));
+    expect(refundedRows.rows).toHaveLength(1);
+    expect(refundedRows.rows[0].payload).toMatchObject({ amountMinor: q.total, currency: "INR", eventId: "evt_c8_refund" });
+    const after = await withTenant(db.pool, T.id, (c) => c.query("SELECT status FROM payments WHERE thread_id=$1", [tid("c-8")]));
+    expect(after.rows[0].status).toBe("refunded");
+    expect((await state("c-8")).thread).toBe(threadBefore); // threads.state untouched by the refund
+    expect((await verifyLedger(db.pool, kernel)).ok).toBe(true);
+  });
+
+  it("a refund naming an unknown payment id is ignored, not an error", async () => {
+    const refund = kit.refunded({ paymentId: "pay_does_not_exist", tenantId: T.id, amount: 100, eventId: "evt_c9_refund" });
+    expect(await handleWebhook(deps(), refund.body, refund.headers, NOW)).toEqual({ status: "ignored", reason: "unknown_payment" });
+  });
 });

@@ -43,10 +43,38 @@ export function razorpaySim(cfg: RazorpaySimConfig): PaymentProvider {
       } catch {
         return null;
       }
-      const o = j as { event?: unknown; payload?: { payment_link?: { entity?: { id?: unknown; amount?: unknown; currency?: unknown; notes?: { tenant_id?: unknown } } }; payment?: { entity?: { id?: unknown } } } };
+      const o = j as {
+        event?: unknown;
+        payload?: {
+          payment_link?: { entity?: { id?: unknown; amount?: unknown; currency?: unknown; notes?: { tenant_id?: unknown } } };
+          payment?: { entity?: { id?: unknown } };
+          refund?: { entity?: { id?: unknown; payment_id?: unknown; amount?: unknown; currency?: unknown; notes?: { tenant_id?: unknown } } };
+        };
+      };
       if (typeof o.event !== "string") return null;
       const link = o.payload?.payment_link?.entity;
       const tenantId = typeof link?.notes?.tenant_id === "string" ? link.notes.tenant_id : undefined;
+      // V12: refund.processed -- real Razorpay payload keys off `payload.refund.entity`, which carries the
+      // ORIGINAL payment id, not the payment link id (hence no `link`/`tenantId` above). Tenant scoping here
+      // comes from `refund.entity.notes.tenant_id`, a simulated choice (see V12's report) -- the real payload
+      // is not guaranteed to carry tenant notes on a refund the way a payment link's notes do.
+      if (o.event === "refund.processed") {
+        const refund = o.payload?.refund?.entity;
+        const refundTenantId = typeof refund?.notes?.tenant_id === "string" ? refund.notes.tenant_id : undefined;
+        if (!refund || typeof refund.id !== "string" || typeof refund.payment_id !== "string" || !refundTenantId || !Number.isSafeInteger(refund.amount) || typeof refund.currency !== "string") {
+          return { kind: "other", eventId, ...(refundTenantId && { tenantId: refundTenantId }), type: o.event };
+        }
+        return { kind: "refunded", eventId, tenantId: refundTenantId, providerPaymentId: refund.payment_id, refundId: refund.id, amountMinor: refund.amount as number, currency: refund.currency };
+      }
+      // V12: payment.failed -- a failed ATTEMPT against a payment link does not consume it (the customer can
+      // usually retry the SAME link), so it is looked up the same way `paid` is, off `payment_link.entity`.
+      if (o.event === "payment.failed") {
+        const payId = o.payload?.payment?.entity?.id;
+        if (!link || typeof link.id !== "string" || !tenantId || !Number.isSafeInteger(link.amount) || typeof link.currency !== "string") {
+          return { kind: "other", eventId, ...(tenantId && { tenantId }), type: o.event };
+        }
+        return { kind: "failed", eventId, tenantId, providerLinkId: link.id, ...(typeof payId === "string" && { providerPaymentId: payId }), amountMinor: link.amount as number, currency: link.currency };
+      }
       if (o.event !== "payment_link.paid") return { kind: "other", eventId, ...(tenantId && { tenantId }), type: o.event };
       const payId = o.payload?.payment?.entity?.id;
       if (!link || typeof link.id !== "string" || !tenantId || typeof payId !== "string" || !Number.isSafeInteger(link.amount) || typeof link.currency !== "string") return null;

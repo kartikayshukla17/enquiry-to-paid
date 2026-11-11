@@ -48,3 +48,39 @@ export function paidEvent(o: { linkId: string; tenantId: string; amount: number;
   });
   return { body, headers: { "x-razorpay-signature": sign(body), "x-razorpay-event-id": o.eventId ?? "evt_sim_0001" } };
 }
+
+/** A Razorpay-shaped `payment.failed` event (FICTIONAL ids, V12) -- a failed ATTEMPT against a payment
+ *  link, which the link itself survives (the customer can usually retry it). */
+export function failedEvent(o: { linkId: string; tenantId: string; amount: number; currency?: string; eventId?: string; paymentId?: string }) {
+  const body = JSON.stringify({
+    entity: "event",
+    event: "payment.failed",
+    payload: {
+      payment_link: { entity: { id: o.linkId, amount: o.amount, currency: o.currency ?? "INR", notes: { tenant_id: o.tenantId } } },
+      payment: {
+        entity: {
+          id: o.paymentId ?? "pay_sim_fail_0001", amount: o.amount, currency: o.currency ?? "INR",
+          error_code: "BAD_REQUEST_ERROR", error_description: "FICTIONAL: card declined",
+        },
+      },
+    },
+  });
+  return { body, headers: { "x-razorpay-signature": sign(body), "x-razorpay-event-id": o.eventId ?? "evt_sim_fail_0001" } };
+}
+
+/**
+ * A Razorpay-shaped `refund.processed` event (FICTIONAL ids, V12), keyed off `payload.refund.entity` --
+ * which real Razorpay carries the ORIGINAL payment id on, not the payment link id (hence `paymentId` here,
+ * never a link id). The simulated refund entity also carries `notes.tenant_id` for tenant scoping, a
+ * reasonable simulated choice documented in V12's report, not a claim about Razorpay's real refund payload.
+ */
+export function refundedEvent(o: { paymentId: string; tenantId: string; amount: number; currency?: string; eventId?: string; refundId?: string }) {
+  const body = JSON.stringify({
+    entity: "event",
+    event: "refund.processed",
+    payload: {
+      refund: { entity: { id: o.refundId ?? "rfnd_sim_0001", payment_id: o.paymentId, amount: o.amount, currency: o.currency ?? "INR", notes: { tenant_id: o.tenantId } } },
+    },
+  });
+  return { body, headers: { "x-razorpay-signature": sign(body), "x-razorpay-event-id": o.eventId ?? "evt_sim_refund_0001" } };
+}

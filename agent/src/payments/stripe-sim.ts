@@ -60,10 +60,43 @@ export function stripePaymentLinksSim(cfg: StripeSimConfig): PaymentProvider {
       } catch {
         return null;
       }
-      const o = j as { id?: unknown; type?: unknown; data?: { object?: { payment_link?: unknown; amount_total?: unknown; currency?: unknown; payment_intent?: unknown; payment_status?: unknown; metadata?: { tenant_id?: unknown } } } };
+      const o = j as {
+        id?: unknown;
+        type?: unknown;
+        data?: {
+          object?: {
+            payment_link?: unknown; amount_total?: unknown; currency?: unknown; payment_intent?: unknown;
+            payment_status?: unknown; metadata?: { tenant_id?: unknown }; amount_refunded?: unknown;
+          };
+        };
+      };
       if (typeof o.id !== "string" || typeof o.type !== "string") return null;
       const s = o.data?.object;
       const tenantId = typeof s?.metadata?.tenant_id === "string" ? s.metadata.tenant_id : undefined;
+      // V12: charge.refunded -- real Stripe Charge object carries `payment_intent` (the same id `paid`
+      // already stored as `providerPaymentId`) and `amount_refunded`/`currency`. Tenant scoping via
+      // `metadata.tenant_id` on the charge is a simulated choice (see V12's report): Stripe charges do not
+      // always inherit the checkout session's metadata, but this simulation puts it there for the same
+      // reason `checkout.session.completed` already does.
+      if (o.type === "charge.refunded") {
+        if (typeof s?.payment_intent !== "string" || !tenantId || !Number.isSafeInteger(s.amount_refunded) || typeof s.currency !== "string") {
+          return { kind: "other", eventId: o.id, ...(tenantId && { tenantId }), type: o.type };
+        }
+        return { kind: "refunded", eventId: o.id, tenantId, providerPaymentId: s.payment_intent, refundId: `${o.id}:refund`, amountMinor: s.amount_refunded as number, currency: s.currency.toUpperCase() };
+      }
+      // V12: checkout.session.async_payment_failed -- a failed attempt (delayed payment method) against the
+      // SAME checkout session/payment link, which is not consumed by the failure. Same `payment_link`/
+      // `amount_total`/`currency`/`metadata.tenant_id` shape `checkout.session.completed` already uses.
+      if (o.type === "checkout.session.async_payment_failed") {
+        if (!s || typeof s.payment_link !== "string" || !tenantId || !Number.isSafeInteger(s.amount_total) || typeof s.currency !== "string") {
+          return { kind: "other", eventId: o.id, ...(tenantId && { tenantId }), type: o.type };
+        }
+        return {
+          kind: "failed", eventId: o.id, tenantId, providerLinkId: s.payment_link,
+          ...(typeof s.payment_intent === "string" && { providerPaymentId: s.payment_intent }),
+          amountMinor: s.amount_total as number, currency: s.currency.toUpperCase(),
+        };
+      }
       if (o.type !== "checkout.session.completed") return { kind: "other", eventId: o.id, ...(tenantId && { tenantId }), type: o.type };
       // A completed session whose payment is not yet paid (delayed methods) is not money received.
       if (s?.payment_status !== "paid") return { kind: "other", eventId: o.id, ...(tenantId && { tenantId }), type: "checkout.session.completed:unpaid" };
