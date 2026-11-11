@@ -26,6 +26,22 @@ type DetailState = QuoteDetailResponse | null | undefined | "not_found";
 type VerifyResponse = { ok: boolean; reason?: string; seq?: number; tenantSeq?: number };
 type VerifyState = VerifyResponse | null | undefined;
 
+/** Mirrors agent/src/server/app.ts's AppPaymentView (V3b, `quoteLedgerSeq` added V12). */
+type PaymentView = {
+  id: string;
+  threadId: string;
+  quoteLedgerSeq: number;
+  provider: string;
+  amountMinor: number;
+  currency: string;
+  status: string;
+  createdAt: string;
+  collectedAt: string | null;
+};
+type PaymentsResponse = { payments: PaymentView[] };
+// undefined: loading. null: a real fetch/network error. A plain array (possibly empty) once loaded.
+type PaymentsState = PaymentView[] | null | undefined;
+
 function asRecord(x: unknown): Record<string, unknown> {
   return x && typeof x === "object" ? (x as Record<string, unknown>) : {};
 }
@@ -87,18 +103,83 @@ function ChainVerifyBadge({ verify }: { verify: VerifyState }) {
   );
 }
 
+/** A one-line, human label for a payment status, never a raw status code shown unexplained. */
+function paymentStatusLabel(status: string): string {
+  switch (status) {
+    case "created":
+      return "Link issued, not yet paid";
+    case "collected":
+      return "Collected";
+    case "mismatch":
+      return "Flagged: amount/currency mismatch";
+    case "held_for_review":
+      return "Held for review (quote expired)";
+    case "refunded":
+      return "Refunded";
+    default:
+      return status;
+  }
+}
+
+/**
+ * V12: the reconciliation view -- "the ledger says X happened to this quote" (the breakdown below, plus
+ * any `payment_failed`/`payment_refunded` entries a human would see on the thread's own ledger) next to
+ * "the payments table currently says Y", on one screen, so the two are visible together and a human can
+ * notice if they ever disagree. This performs no drift-detection of its own (no diff, no alert) -- it is
+ * exactly `GET /api/app/payments` filtered to this quote's `quoteLedgerSeq`, rendered plainly.
+ */
+function PaymentReconciliation({ payments, quoteSeq }: { payments: PaymentsState; quoteSeq: number }) {
+  if (payments === undefined) {
+    return (
+      <div className="panel border-2 border-ink p-4">
+        <p className="font-display text-xs uppercase tracking-[0.04em] text-ink/70">Payment reconciliation</p>
+        <p className="mt-2 text-sm text-ink/70">Loading payment status…</p>
+      </div>
+    );
+  }
+  if (payments === null) {
+    return (
+      <div className="panel border-2 border-ink p-4">
+        <p className="font-display text-xs uppercase tracking-[0.04em] text-ink/70">Payment reconciliation</p>
+        <p className="mt-2 text-sm text-ink/70">Could not load payment status.</p>
+      </div>
+    );
+  }
+  const matches = payments.filter((p) => p.quoteLedgerSeq === quoteSeq);
+  return (
+    <div className="panel flex flex-col gap-3 border-2 border-ink p-4">
+      <p className="font-display text-xs uppercase tracking-[0.04em] text-ink/70">Payment reconciliation</p>
+      {matches.length === 0 ? (
+        <EmptyState title="No payment yet" body="No payment link has been issued against this quote (or this is an owner price)." />
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {matches.map((p) => (
+            <li key={p.id} className="flex flex-wrap items-baseline justify-between gap-2 border-b border-ink/20 pb-2 last:border-b-0 last:pb-0">
+              <span className="text-sm text-ink">{paymentStatusLabel(p.status)}</span>
+              <span className="font-mono text-xs text-ink/60">{p.provider}</span>
+              <span className="font-mono text-sm text-ink">{formatMoney(p.amountMinor, p.currency)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /**
  * V5: the quote detail screen. Every number on it traces straight back to the kernel-produced ledger
  * payload returned by `GET /api/app/quotes/:seq` — line items, rule ids, rate-card hash/version,
  * `validUntil`, adjustments — this page performs no arithmetic of its own, only display formatting
  * (money, dates). The chain-verify badge is a separate fetch to `GET /api/app/ledger-verify`, the
- * server's real `verifyLedger` call, never a client-side guess.
+ * server's real `verifyLedger` call, never a client-side guess. (V12) a third fetch to
+ * `GET /api/app/payments`, filtered client-side to this quote's `seq`, backs the reconciliation panel.
  */
 export default function QuoteDetailPage() {
   const params = useParams<{ seq: string }>();
   const seq = params.seq;
   const [state, setState] = useState<DetailState>(undefined);
   const [verify, setVerify] = useState<VerifyState>(undefined);
+  const [payments, setPayments] = useState<PaymentsState>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,6 +212,21 @@ export default function QuoteDetailPage() {
       })
       .catch(() => {
         if (!cancelled) setVerify(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/app/payments")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("request failed"))))
+      .then((j: PaymentsResponse) => {
+        if (!cancelled) setPayments(j.payments);
+      })
+      .catch(() => {
+        if (!cancelled) setPayments(null);
       });
     return () => {
       cancelled = true;
@@ -174,6 +270,8 @@ export default function QuoteDetailPage() {
       </div>
 
       {quote.type === "quote" ? <QuoteBreakdown payload={p} rateCardVersion={quote.rateCardVersion} /> : <OwnerQuoteBreakdown payload={p} />}
+
+      <PaymentReconciliation payments={payments} quoteSeq={quote.seq} />
     </div>
   );
 }
