@@ -14,6 +14,8 @@ export interface OpenRefusal {
   fields: Partial<ExtractedFields>;
   /** The owner already said "call them" for this refusal (a follow-up marker); it still can be quoted or declined. */
   calledBack: boolean;
+  /** ledger_entries.at for the refusal -- an ISO timestamp, the escalation's "age". */
+  at: string;
 }
 
 interface Row {
@@ -23,6 +25,7 @@ interface Row {
   payload: { reason: RefusalReason; ruleGap?: string; suggestion?: string };
   fields: Partial<ExtractedFields>;
   called: boolean;
+  at: Date;
 }
 
 /**
@@ -33,11 +36,11 @@ interface Row {
 export async function listOpenRefusals(client: PoolClient, tenantId: string): Promise<OpenRefusal[]> {
   const { rows } = await client.query<Row>(
     `WITH latest AS (
-       SELECT DISTINCT ON (l.thread_id) l.thread_id, l.tenant_seq, l.seq, l.payload
+       SELECT DISTINCT ON (l.thread_id) l.thread_id, l.tenant_seq, l.seq, l.payload, l.at
          FROM ledger_entries l
         WHERE l.tenant_id = $1 AND l.type = 'refusal'
         ORDER BY l.thread_id, l.tenant_seq DESC)
-     SELECT latest.tenant_seq::int AS tenant_seq, latest.seq::float8 AS seq, latest.thread_id, latest.payload, t.fields,
+     SELECT latest.tenant_seq::int AS tenant_seq, latest.seq::float8 AS seq, latest.thread_id, latest.payload, latest.at, t.fields,
             EXISTS (SELECT 1 FROM ledger_entries a
                      WHERE a.tenant_id = $1 AND a.thread_id = latest.thread_id AND a.tenant_seq > latest.tenant_seq
                        AND a.type = 'owner_message' AND a.payload->>'command' = 'call_them') AS called
@@ -55,5 +58,6 @@ export async function listOpenRefusals(client: PoolClient, tenantId: string): Pr
     ...(r.payload.suggestion !== undefined && { suggestion: r.payload.suggestion }),
     fields: r.fields,
     calledBack: r.called,
+    at: r.at.toISOString(),
   }));
 }

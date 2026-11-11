@@ -8,10 +8,15 @@
 import { readdirSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { toNodeHandler } from "better-auth/node";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { createAuth, type AuthOptions } from "../auth/index.js";
+import { describeReason } from "../escalation/index.js";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import { verifyLedger } from "../ledger/index.js";
+import type { Member } from "../owner/members.js";
+import { ensureOpsThread } from "../owner/handle.js";
+import { listOpenRefusals } from "../owner/queue.js";
+import { handbackInTxn, ownerReplyInTxn, threadRef } from "../owner/takeover.js";
 import { webhookHttpStatus } from "../payments/http.js";
 import type { ProviderRegistry } from "../payments/registry.js";
 import { handleProviderWebhook } from "../payments/webhook.js";
@@ -152,6 +157,34 @@ export interface AppLedgerVerifyResponse {
   tenantSeq?: number;
 }
 
+/**
+ * V6: one row of the escalation queue -- `owner/queue.ts`'s `listOpenRefusals` (the latest refusal on
+ * each thread still `refused`), reshaped for the wire. `reason` is the raw closed-set code (same as
+ * every other typed payload field this API exposes verbatim); `reasonText` is the owner-facing
+ * sentence, computed server-side via `escalation/index.ts`'s `describeReason` so the site never
+ * re-derives the wording V4's `describeLedgerEntry`-based summaries already established the pattern
+ * for. `at` is the refusal's ledger timestamp ("age") -- the site computes "2h ago" from it; a second
+ * "ageSeconds as of request time" field would just be presentation duplicated onto the wire.
+ */
+export interface AppEscalationSummary {
+  tenantSeq: number;
+  seq: number;
+  threadId: string;
+  reason: string;
+  reasonText: string;
+  ruleGap?: string;
+  suggestion?: string;
+  at: string;
+  calledBack: boolean;
+}
+
+/** The takeover/handback actions' response: the owner-channel function's own reply text, plus the
+ *  thread's new state so the console can refresh its view without a second round trip. */
+export interface AppOwnerActionResponse {
+  reply: string;
+  threadState: string;
+}
+
 function numberField(p: Record<string, unknown>, field: string): number | null {
   const v = p[field];
   return typeof v === "number" ? v : null;
@@ -241,26 +274,103 @@ async function appLedgerVerify(pool: Pool, kernel: KernelBridge, tenantId: strin
   };
 }
 
-type AppCaller = { ok: true; tenantId: string } | { ok: false; status: 401 | 403; body: { error: string } };
+/**
+ * V6: the escalation queue -- `owner/queue.ts`'s `listOpenRefusals` (EXACTLY the owner-channel's own
+ * data source for "what is waiting for me"), wrapped in `withTenant` the same way every other
+ * /api/app/* list route is. `reasonText` is computed here, server-side, via the same `describeReason`
+ * the owner-channel's `why`/digest replies already use, so the site never re-derives the wording.
+ */
+async function listAppEscalations(pool: Pool, tenantId: string): Promise<{ escalations: AppEscalationSummary[] }> {
+  const open = await withTenant(pool, tenantId, (c) => listOpenRefusals(c, tenantId));
+  return {
+    escalations: open.map((o) => ({
+      tenantSeq: o.tenantSeq,
+      seq: o.seq,
+      threadId: o.threadId,
+      reason: o.reason,
+      reasonText: describeReason(o.reason),
+      ...(o.ruleGap !== undefined && { ruleGap: o.ruleGap }),
+      ...(o.suggestion !== undefined && { suggestion: o.suggestion }),
+      at: o.at,
+      calledBack: o.calledBack,
+    })),
+  };
+}
 
 /**
- * Resolves who is allowed to call /api/app/* -- and which tenant they may see -- from the session alone.
- * Never from anything the client sends: no header, query param or body field is ever consulted here.
- * `activeOrganizationId` lives in the session row itself (set server-side by Better Auth's own
- * organization/create and organization/set-active, see agent/src/auth/index.ts); organization.id IS the
- * tenant id everywhere else in this codebase. The owner check reads this APP's own `members` table
- * (distinct from Better Auth's `member` table) through `withTenant`, i.e. under RLS for that tenant --
- * v1 has exactly one real operator, so "owner" is the whole gate; manager/staff enforcement is not v1's job.
+ * V6: resolves `:id` to a thread under this tenant and its current ref (`threadRef` -- the newest
+ * refusal/quote/owner_quote on it), plus the tenant's real name for `ensureOpsThread`/`ownerReplyInTxn`'s
+ * `ctx.tenant`. `undefined` for a thread id that does not resolve under this tenant OR has no ref yet
+ * (every thread the escalation queue ever lists has a refusal, so this is only reachable by calling
+ * these routes on some other thread that has never been refused/quoted -- there is nothing to take
+ * over there either, so the same 404 applies). Caller already holds the transaction (`c`); this never
+ * opens its own.
+ */
+async function resolveThreadForOwnerAction(c: PoolClient, tenantId: string, threadId: string): Promise<{ tenant: { id: string; name: string }; ref: string } | undefined> {
+  const t = (await c.query<{ id: string }>("SELECT id FROM threads WHERE tenant_id=$1 AND id=$2", [tenantId, threadId])).rows[0];
+  if (!t) return undefined;
+  const ref = await threadRef(c, tenantId, threadId);
+  if (!ref) return undefined;
+  const tenantRow = (await c.query<{ name: string }>("SELECT name FROM tenants WHERE id=$1", [tenantId])).rows[0];
+  return { tenant: { id: tenantId, name: tenantRow?.name ?? tenantId }, ref };
+}
+
+/**
+ * V6: "take over and reply" -- `owner/takeover.ts`'s `ownerReplyInTxn`, called with the HTTP caller's
+ * own member row (never a looked-up arbitrary one) as the acting member. Calling this again on an
+ * already-paused thread is fine and expected: it sends another message and does not double-pause or
+ * double-log a `pause` entry (that discipline lives in `ownerReplyInTxn` itself, reused verbatim).
+ * `undefined` means the thread id did not resolve under this tenant (or has no ref yet) -- a 404.
+ */
+async function appTakeover(pool: Pool, kernel: KernelBridge, tenantId: string, member: Member, threadId: string, text: string): Promise<AppOwnerActionResponse | undefined> {
+  return withTenant(pool, tenantId, async (c) => {
+    const resolved = await resolveThreadForOwnerAction(c, tenantId, threadId);
+    if (!resolved) return undefined;
+    const opsThreadId = await ensureOpsThread(c, resolved.tenant, piiKeysFromEnv());
+    const r = await ownerReplyInTxn(c, kernel, { tenant: resolved.tenant, member, now: new Date().toISOString(), opsThreadId }, { ref: resolved.ref, text });
+    const threadState = (await c.query<{ state: string }>("SELECT state FROM threads WHERE id=$1", [threadId])).rows[0]!.state;
+    return { reply: r.reply, threadState };
+  });
+}
+
+/** V6: hands a paused thread back -- `owner/takeover.ts`'s `handbackInTxn`, with the ref this route
+ *  already knows from the URL (never the ambiguity-resolution "guess which thread" path, which is
+ *  only for the WhatsApp owner channel's "handback" with no ref). `undefined` means 404, same as
+ *  `appTakeover`; "not paused" etc. is `handbackInTxn`'s own normal (200) outcome, not an error here. */
+async function appHandback(pool: Pool, kernel: KernelBridge, tenantId: string, member: Member, threadId: string): Promise<AppOwnerActionResponse | undefined> {
+  return withTenant(pool, tenantId, async (c) => {
+    const resolved = await resolveThreadForOwnerAction(c, tenantId, threadId);
+    if (!resolved) return undefined;
+    const opsThreadId = await ensureOpsThread(c, resolved.tenant, piiKeysFromEnv());
+    const r = await handbackInTxn(c, kernel, { tenant: resolved.tenant, member, now: new Date().toISOString(), opsThreadId }, { ref: resolved.ref });
+    const threadState = (await c.query<{ state: string }>("SELECT state FROM threads WHERE id=$1", [threadId])).rows[0]!.state;
+    return { reply: r.reply, threadState };
+  });
+}
+
+type AppCaller = { ok: true; tenantId: string; memberId: string } | { ok: false; status: 401 | 403; body: { error: string } };
+
+/**
+ * Resolves who is allowed to call /api/app/* -- which tenant they may see, and (V6) their own
+ * `members.id` -- from the session alone. Never from anything the client sends: no header, query
+ * param or body field is ever consulted here. `activeOrganizationId` lives in the session row itself
+ * (set server-side by Better Auth's own organization/create and organization/set-active, see
+ * agent/src/auth/index.ts); organization.id IS the tenant id everywhere else in this codebase. The
+ * owner check reads this APP's own `members` table (distinct from Better Auth's `member` table)
+ * through `withTenant`, i.e. under RLS for that tenant -- v1 has exactly one real operator, so "owner"
+ * is the whole gate; manager/staff enforcement is not v1's job. `memberId` is this same row's `id`
+ * (the Better Auth member id, which is exactly what `ownerReplyInTxn`/`handbackInTxn` want to name as
+ * the acting member) -- V6's takeover/handback routes need it; no second lookup is added for them.
  */
 async function resolveAppCaller(pool: Pool, auth: ReturnType<typeof createAuth>, req: IncomingMessage): Promise<AppCaller> {
   const session = await auth.api.getSession({ headers: fetchHeaders(req) });
   const tenantId = session?.session.activeOrganizationId;
   if (!session || !tenantId) return { ok: false, status: 401, body: { error: "not signed in" } };
-  const role = await withTenant(pool, tenantId, async (c) =>
-    (await c.query<{ role: string }>("SELECT role FROM members WHERE tenant_id=$1 AND user_id=$2", [tenantId, session.user.id])).rows[0]?.role,
+  const member = await withTenant(pool, tenantId, async (c) =>
+    (await c.query<{ id: string; role: string }>("SELECT id, role FROM members WHERE tenant_id=$1 AND user_id=$2", [tenantId, session.user.id])).rows[0],
   );
-  if (role !== "owner") return { ok: false, status: 403, body: { error: "owner only" } };
-  return { ok: true, tenantId };
+  if (member?.role !== "owner") return { ok: false, status: 403, body: { error: "owner only" } };
+  return { ok: true, tenantId, memberId: member.id };
 }
 
 /**
@@ -402,10 +512,29 @@ export function createAppServer(deps: AppServerDeps): Server {
         const { pathname } = new URL(req.url, "http://x");
         const caller = await resolveAppCaller(deps.pool, auth, req);
         if (!caller.ok) return send(caller.status, caller.body);
+
+        // V6: the two write routes (takeover, handback) -- everything else under /api/app/* is GET-only
+        // (checked right below), so these are matched and handled before that blanket gate.
+        const takeoverMatch = /^\/api\/app\/threads\/([^/]+)\/takeover$/.exec(pathname);
+        if (req.method === "POST" && takeoverMatch) {
+          const b = JSON.parse(await readBody(req)) as { text?: unknown };
+          if (typeof b.text !== "string" || !b.text.trim() || b.text.length > 1000) return send(400, { error: "text must be 1-1000 characters" });
+          const member: Member = { id: caller.memberId, role: "owner" };
+          const result = await appTakeover(deps.pool, deps.kernel, caller.tenantId, member, decodeURIComponent(takeoverMatch[1]!), b.text.trim());
+          return result ? send(200, result) : send(404, { error: "not found" });
+        }
+        const handbackMatch = /^\/api\/app\/threads\/([^/]+)\/handback$/.exec(pathname);
+        if (req.method === "POST" && handbackMatch) {
+          const member: Member = { id: caller.memberId, role: "owner" };
+          const result = await appHandback(deps.pool, deps.kernel, caller.tenantId, member, decodeURIComponent(handbackMatch[1]!));
+          return result ? send(200, result) : send(404, { error: "not found" });
+        }
+
         if (req.method !== "GET") return send(404, { error: "not found" });
         if (pathname === "/api/app/threads") return send(200, await listAppThreads(deps.pool, caller.tenantId));
         if (pathname === "/api/app/payments") return send(200, await listAppPayments(deps.pool, caller.tenantId));
         if (pathname === "/api/app/quotes") return send(200, await listAppQuotes(deps.pool, caller.tenantId));
+        if (pathname === "/api/app/escalations") return send(200, await listAppEscalations(deps.pool, caller.tenantId));
         if (pathname === "/api/app/ledger-verify") return send(200, await appLedgerVerify(deps.pool, deps.kernel, caller.tenantId));
         const threadMatch = /^\/api\/app\/threads\/([^/]+)$/.exec(pathname);
         if (threadMatch) {
