@@ -8,6 +8,7 @@ describe("webhookHttpStatus", () => {
       { status: "duplicate" },
       { status: "ignored", reason: "unknown_link" },
       { status: "mismatch", reason: "amount_mismatch", threadId: "t", paymentId: "p" },
+      { status: "held_for_review", threadId: "t", paymentId: "p" }, // V11: received and acknowledged, just not actioned the normal way
     ] as const) expect(webhookHttpStatus(r)).toBe(200);
   });
   it("refuses forged, malformed and unknown-provider requests", () => {

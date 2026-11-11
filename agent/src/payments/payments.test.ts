@@ -234,6 +234,40 @@ describe("webhook: the only path to a collected entry", () => {
     expect((await handleWebhook(deps(), ok.body, ok.headers, NOW)).status).toBe("collected");
   });
 
+  it("an expired agent quote: a paid event is held for manual review, not collected, and the thread does not move", async () => {
+    const { total, linkId } = await quoted("wh-exp");
+    const before = (await withTenant(db.pool, T1.id, (c) => c.query("SELECT state FROM threads WHERE id='wh-exp'"))).rows[0].state as string;
+    const ev = paidEvent({ linkId, tenantId: T1.id, amount: total, eventId: "evt_wh_exp" });
+    const wellPastValidity = "2026-11-20T10:00:00Z"; // the fictional card's quote is valid 7 days from NOW (2026-11-07)
+    const r = await handleWebhook(deps(), ev.body, ev.headers, wellPastValidity);
+    expect(r).toMatchObject({ status: "held_for_review", threadId: "wh-exp" });
+    const s = await state("wh-exp");
+    expect(s.thread).toBe(before); // unchanged -- specifically NOT flipped to collected
+    expect(s.collected).toEqual([]);
+    const held = await withTenant(db.pool, T1.id, (c) => c.query("SELECT payload FROM ledger_entries WHERE thread_id='wh-exp' AND type='payment_held_for_review'"));
+    expect(held.rows).toHaveLength(1);
+    expect(held.rows[0].payload).toMatchObject({ amountMinor: total, currency: "INR", eventId: "evt_wh_exp", provider: "razorpay-sim" });
+    expect(held.rows[0].payload.quoteValidUntil).toBeTruthy();
+    const payStatus = (await withTenant(db.pool, T1.id, (c) => c.query("SELECT status FROM payments WHERE thread_id='wh-exp'"))).rows[0].status as string;
+    // Deliberate design choice (see migration 0019 + webhook.ts): unlike a mismatch, an expired quote can never
+    // become valid again, so `payments.status` itself moves to 'held_for_review' (not left at 'created') -- V12's
+    // reconciliation view can then tell "held" apart from "nothing received yet" straight off `payments`.
+    expect(payStatus).toBe("held_for_review");
+    expect((await verifyLedger(db.pool, kernel)).ok).toBe(true);
+  });
+
+  it("a still-valid quote's paid event collects exactly as before (no regression from the expiry check)", async () => {
+    const { total, linkId } = await quoted("wh-notexp");
+    const ev = paidEvent({ linkId, tenantId: T1.id, amount: total, eventId: "evt_wh_notexp" });
+    const r = await handleWebhook(deps(), ev.body, ev.headers, NOW); // same instant the quote was issued -- still valid
+    expect(r).toMatchObject({ status: "collected", threadId: "wh-notexp" });
+    const s = await state("wh-notexp");
+    expect(s.thread).toBe("collected");
+    expect(s.collected).toHaveLength(1);
+    const payStatus = (await withTenant(db.pool, T1.id, (c) => c.query("SELECT status FROM payments WHERE thread_id='wh-notexp'"))).rows[0].status as string;
+    expect(payStatus).toBe("collected");
+  });
+
   it("an unknown link (or another tenant's link id) collects nothing", async () => {
     const { total, linkId } = await quoted("wh-6");
     const unknown = paidEvent({ linkId: "pl_doesnotexist", tenantId: T1.id, amount: total, eventId: "evt_wh_6a" });

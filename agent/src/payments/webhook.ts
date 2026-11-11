@@ -7,7 +7,13 @@
  *   4. amount and currency must equal the payment's (copied from the agent's quote) -> else a `payment_mismatch`
  *      ledger entry and NO collected entry;
  *   5. not already collected -> else flagged;
- *   6. otherwise: payment -> collected, `collected` ledger entry, thread -> collected, in one transaction.
+ *   6. (V11) the quote this payment was issued for must still be valid at the moment the `paid` event arrives, re-checked
+ *      here (not only when the customer re-asks for the link, which `requestPaymentLink` already checks) -> if an AGENT
+ *      quote (never an `owner_quote`: owner prices have no `validUntil` to lapse) has since expired, a `payment_held_for_review`
+ *      ledger entry is written instead and NOTHING collects; `payments.status` moves to `held_for_review` too (deliberately
+ *      unlike a mismatch, which leaves `payments.status` alone -- an expired quote, unlike a wrong amount, can never become
+ *      valid again, so there is no "a correct retry still collects" path here worth preserving);
+ *   7. otherwise: payment -> collected, `collected` ledger entry, thread -> collected, in one transaction.
  */
 import { createHash } from "node:crypto";
 import type { Pool } from "pg";
@@ -25,7 +31,8 @@ export type WebhookResult =
   | { status: "duplicate" }
   | { status: "rejected"; reason: "bad_signature" | "unparseable" | "unknown_provider" }
   | { status: "ignored"; reason: "unknown_link" | "not_a_payment_event" }
-  | { status: "mismatch"; reason: "amount_mismatch" | "currency_mismatch"; threadId: string; paymentId: string };
+  | { status: "mismatch"; reason: "amount_mismatch" | "currency_mismatch"; threadId: string; paymentId: string }
+  | { status: "held_for_review"; threadId: string; paymentId: string };
 
 interface PaymentRow {
   id: string;
@@ -92,7 +99,28 @@ export async function handleWebhook(
       if (ev.currency !== pay.currency) return flag("currency_mismatch");
       if (ev.amountMinor !== pay.amount_minor) return flag("amount_mismatch");
 
-      const quote = (await client.query<{ rate_card_hash: string | null }>("SELECT rate_card_hash FROM ledger_entries WHERE seq=$1", [pay.quote_ledger_seq])).rows[0];
+      const quote = (
+        await client.query<{ type: string; rate_card_hash: string | null; valid_until: string | null }>(
+          "SELECT type, rate_card_hash, payload->>'validUntil' AS valid_until FROM ledger_entries WHERE seq=$1",
+          [pay.quote_ledger_seq],
+        )
+      ).rows[0];
+      // An `owner_quote` has no `validUntil` at all (owner prices don't lapse) -- only an agent `quote` can expire here.
+      if (quote?.type === "quote" && quote.valid_until && Date.parse(quote.valid_until) < Date.parse(at)) {
+        await appendEntry(client, deps.kernel, {
+          tenantId: ev.tenantId, threadId: pay.thread_id, at, type: "payment_held_for_review",
+          payload: {
+            paymentId: pay.id, quoteSeq: pay.quote_ledger_seq, provider, providerLinkId: ev.providerLinkId,
+            providerPaymentId: ev.providerPaymentId, eventId: ev.eventId, amountMinor: pay.amount_minor,
+            currency: pay.currency, quoteValidUntil: quote.valid_until,
+          },
+          ...(quote.rate_card_hash && { rateCardHash: quote.rate_card_hash }),
+        });
+        await client.query("UPDATE payments SET status='held_for_review' WHERE id=$1", [pay.id]);
+        await record(pay.id, "held_for_review", "quote_expired");
+        return { status: "held_for_review", threadId: pay.thread_id, paymentId: pay.id };
+      }
+
       await appendEntry(client, deps.kernel, {
         tenantId: ev.tenantId, threadId: pay.thread_id, at, type: "collected",
         payload: { paymentId: pay.id, quoteSeq: pay.quote_ledger_seq, provider, providerLinkId: ev.providerLinkId, providerPaymentId: ev.providerPaymentId, eventId: ev.eventId, amountMinor: pay.amount_minor, currency: pay.currency },
