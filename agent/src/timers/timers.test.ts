@@ -4,6 +4,8 @@ import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import { createTestDb, type TestDb } from "../ledger/test-db.js";
 import { nativeAvailability } from "../availability/native.js";
 import { withTenant } from "../tenancy/with-tenant.js";
+import { collectingChaserOutbox } from "../chasers/index.js";
+import { verifyLedger } from "../ledger/index.js";
 import { runDueTimers } from "./run.js";
 
 let db: TestDb;
@@ -97,5 +99,43 @@ describe("runDueTimers", () => {
       const { rows } = await db.pool.query("SELECT count(*)::int AS n FROM ledger_entries WHERE type='hold' AND payload->>'holdId'=$1 AND payload->>'action'='expired'", [id]);
       expect(rows[0].n).toBe(1);
     }
+  });
+
+  // V9: thread_work_queue closes the residual gap `timers`' own row-level SKIP LOCKED can't -- two DIFFERENT
+  // due timer rows (a hold_expiry and a chaser) for the SAME thread, claimed by two truly concurrent /tick
+  // calls. This test proves end-to-end completion and ledger consistency when that happens; the actual
+  // mutual-exclusion guarantee (exactly one claim wins) is thread-queue.test.ts's job, not this one's --
+  // see this ticket's report for what each level does and does not prove.
+  it("same thread, two different due timer kinds (hold_expiry + chaser): concurrent runDueTimers calls complete, claim the thread, and release it", async () => {
+    const th = `${T}-th-${++n}`;
+    await db.pool.query("INSERT INTO threads (id, tenant_id, customer_id) VALUES ($1,$2,$3)", [th, T, `${T}-c`]);
+    const holdResult = await withTenant(db.pool, T, (c) =>
+      nativeAvailability.placeHold(c, { tenantId: T, resourceId: `${T}-r`, threadId: th, start: "2027-03-06", end: "2027-03-06", expiresAt: "2026-11-09T10:00:00Z", now: NOW }),
+    );
+    if (!holdResult.ok) throw new Error("hold refused");
+    const holdId = holdResult.hold.id;
+    await db.pool.query("INSERT INTO timers (tenant_id, kind, subject_id, run_at) VALUES ($1,'chaser',$2,$3)", [T, th, "2026-11-09T10:00:00Z"]);
+
+    const outbox = collectingChaserOutbox([]);
+    const [a, b] = await Promise.all([
+      runDueTimers(db.pool, "2026-11-09T10:00:00Z", { kernel, chaserOutbox: outbox }),
+      runDueTimers(db.pool, "2026-11-09T10:00:00Z", { kernel, chaserOutbox: outbox }),
+    ]);
+    expect(a.processed + b.processed).toBe(2); // the hold_expiry and the chaser, combined across the two calls: neither lost nor double-applied
+
+    expect(await status(holdId)).toBe("expired");
+    const chaserTimer = await db.pool.query("SELECT status FROM timers WHERE tenant_id=$1 AND kind='chaser' AND subject_id=$2", [T, th]);
+    expect(chaserTimer.rows[0].status).toBe("done");
+    const chaseEntries = await db.pool.query("SELECT count(*)::int AS n FROM ledger_entries WHERE tenant_id=$1 AND thread_id=$2 AND type='chase'", [T, th]);
+    expect(chaseEntries.rows[0].n).toBe(1); // cancelled exactly once (no_quote), not double-applied
+
+    // Proves the thread was actually claimed and then released during the run (not merely that both timers
+    // happened to complete without contention): if the /tick wiring never claimed this thread, this row
+    // would not exist at all.
+    const queueRow = await db.pool.query("SELECT claimed_at, claimed_by FROM thread_work_queue WHERE thread_id=$1", [th]);
+    expect(queueRow.rows[0]).toBeDefined();
+    expect(queueRow.rows[0].claimed_at).toBeNull();
+
+    expect((await verifyLedger(db.pool, kernel)).ok).toBe(true);
   });
 });

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { loadKernel, type KernelBridge } from "../kernel/index.js";
 import { GENESIS_HASH, appendEntry } from "../ledger/index.js";
@@ -5,6 +6,7 @@ import { idleResumeInTxn } from "../owner/takeover.js";
 import { runChaserInTxn } from "../chasers/run.js";
 import type { ChaserOutbox } from "../chasers/types.js";
 import { APP_ROLE } from "../tenancy/with-tenant.js";
+import { claimThread, releaseThread } from "./thread-queue.js";
 
 export interface RunResult {
   /** Timers claimed and completed by this call. */
@@ -31,12 +33,23 @@ interface DueTimer {
  * to the app role and `app.tenant_id` set, so the work itself is under RLS. Claim and work commit together:
  * a crash rolls the claim back and the timer is simply due again; `FOR UPDATE SKIP LOCKED` keeps two workers
  * off the same row. Marking a hold expired is idempotent (only an `active` hold changes), so a replay is a no-op.
+ *
+ * `timers`' own `FOR UPDATE SKIP LOCKED` only ever stops two workers grabbing the SAME timer row — it does
+ * nothing for two DIFFERENT timer rows that belong to the SAME thread (e.g. a due `hold_expiry` and a due
+ * `chaser`), which two truly concurrent calls could otherwise claim and process at the same moment (V9). So
+ * right after a due timer is claimed, its thread is resolved and durably claimed in `thread_work_queue`
+ * (`claimThread`, on the trusted `pool`, not `client` — this table is RLS-exempt and claim/release are their
+ * own atomic statements, independent of this per-timer transaction) before any kind-specific branch runs. A
+ * lost claim race rolls this iteration back untouched and moves on; the timer stays due for whoever holds the
+ * thread to finish. `runId` is one random id per call to `runDueTimers`, reused for every claim that call makes.
  */
 export async function runDueTimers(pool: Pool, now: string, opts: { kernel?: KernelBridge; chaserOutbox?: ChaserOutbox } = {}): Promise<RunResult> {
   const kernel = opts.kernel ?? (await loadKernel());
   const result: RunResult = { processed: 0, expiredHolds: [], resumedThreads: [], chasersSent: [] };
+  const runId = randomUUID();
   for (;;) {
     const client = await pool.connect();
+    let claimedThreadId: string | undefined;
     try {
       await client.query("BEGIN");
       const due = (
@@ -51,6 +64,24 @@ export async function runDueTimers(pool: Pool, now: string, opts: { kernel?: Ker
         await client.query("ROLLBACK");
         return result;
       }
+
+      // V9: resolve the due timer's thread (still owner role: a hold_expiry's subject_id is a HOLD id, not a
+      // thread id) and claim it before doing any kind-specific work. A hold that's already gone (shouldn't
+      // happen) resolves to no thread id; there is then nothing to claim, and the existing "not found"
+      // handling below runs exactly as it does today.
+      const threadId = due.kind === "hold_expiry" ? (await client.query<{ thread_id: string }>("SELECT thread_id FROM holds WHERE id=$1", [due.subject_id])).rows[0]?.thread_id : due.subject_id;
+      if (threadId) {
+        const claim = await claimThread(pool, threadId, runId, now);
+        if (!claim.ok) {
+          // Someone else is already working this thread. Don't process this timer this iteration: roll back
+          // (nothing was written), and let the outer loop try the next due timer -- this one is simply due
+          // again, same as any other retried timer.
+          await client.query("ROLLBACK");
+          continue;
+        }
+        claimedThreadId = threadId;
+      }
+
       await client.query(`SET LOCAL ROLE ${APP_ROLE}`);
       await client.query("SELECT set_config('app.tenant_id', $1, true)", [due.tenant_id]);
       let expired: string | undefined;
@@ -67,7 +98,16 @@ export async function runDueTimers(pool: Pool, now: string, opts: { kernel?: Ker
         if (r.sent) result.chasersSent.push({ threadId: due.subject_id, n: r.sent });
         retryAt = r.retryAt;
       } else {
-        // Same lock order as the pipeline (ledger head first, then hold rows) so the two can never deadlock.
+        // Thread first, then the ledger head -- the same order every other branch above uses, and the order
+        // the live pipeline uses too. This branch's own lock on `holds` never conflicted with that; what did
+        // was an unaccounted-for one: `runTimer`'s ledger write (via appendEntry) inserts into ledger_entries,
+        // whose FK to `threads` takes an implicit FOR KEY SHARE lock on that thread's row -- AFTER this branch
+        // already held ledger_heads FOR UPDATE, backwards from every thread-first branch's order. Two
+        // real/concurrent hold_expiry + owner_idle_resume (or chaser) timers for the same tenant, hitting at
+        // once, could take these two locks in opposite order and deadlock (reproduced while building V9,
+        // whose own claim/release round trips widen the window enough to make it a real, if still rare,
+        // failure, not just a theoretical one). Locking the thread explicitly, up front, fixes the order.
+        if (threadId) await client.query("SELECT 1 FROM threads WHERE id=$1 FOR UPDATE", [threadId]);
         await client.query(
           "INSERT INTO ledger_heads (tenant_id, last_tenant_seq, last_hash) VALUES ($1, 0, $2) ON CONFLICT (tenant_id) DO NOTHING",
           [due.tenant_id, GENESIS_HASH],
@@ -85,6 +125,8 @@ export async function runDueTimers(pool: Pool, now: string, opts: { kernel?: Ker
       throw e;
     } finally {
       client.release();
+      // Always release a claim this call actually took -- a thrown error above must not leave it stuck.
+      if (claimedThreadId) await releaseThread(pool, claimedThreadId, runId);
     }
   }
 }
