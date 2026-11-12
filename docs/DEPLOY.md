@@ -14,7 +14,7 @@ Everything below is test-mode / fictional data, same as local dev.
    - **Root directory:** `agent`
    - **Runtime:** Node
    - **Build command:** `pnpm install --frozen-lockfile` (NOT `corepack enable && pnpm install ...` — Render's current Node images already ship pnpm pre-wired via corepack at `/usr/bin/pnpm`, and `corepack enable` fails trying to re-link that same read-only path: `EROFS: read-only file system, unlink '/usr/bin/pnpm'`. pnpm is already on `PATH` and already honors this repo's `packageManager` pin, so just call it directly.)
-   - **Start command:** `pnpm serve`
+   - **Start command:** `pnpm start` (NOT `pnpm serve` — that script reads `tsx --env-file=.env`, which fails hard with `node: .env: not found` on Render, since Render injects env vars directly into the process rather than via a `.env` file. `pnpm start` runs the same `serve.ts` without that flag.)
    - **Instance type:** Free
 4. **Environment variables** — add every line from `agent/.env` that has a value (not the file itself; paste each key/value into Render's dashboard). Do **not** set `PORT` — Render injects it itself and `serve.ts` already reads it.
 5. Create the service. Render builds and gives you a URL like `https://e2p-agent.onrender.com`.
