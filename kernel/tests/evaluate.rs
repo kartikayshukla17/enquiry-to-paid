@@ -209,3 +209,49 @@ fn ordinary_intents_do_not_block_a_quote() {
         assert_eq!(out["kind"], "quote", "{intent}");
     }
 }
+
+/// A real clock reading from JavaScript (`new Date().toISOString()`) carries milliseconds, which the
+/// chain functions already accept and stamp into ledger `at` values. `evaluate` must agree: rejecting
+/// the same string shape here produced `invalid_input` for every live WhatsApp enquiry (the first code
+/// path that ever fed the kernel a real clock instead of a frozen demo date).
+#[test]
+fn accepts_a_millisecond_precision_now() {
+    let card: Value = serde_json::from_str(CARD).unwrap();
+    let input = json!({
+        "rateCard": card,
+        "fields": saturday_120(),
+        "availability": no_blocks(),
+        "now": "2026-11-07T10:00:00.123Z"
+    });
+    let out: Value = serde_json::from_str(&evaluate(&input.to_string())).unwrap();
+    assert_eq!(out["kind"], "quote");
+}
+
+/// Sub-second precision is truncated, never rounded: the same wall-clock second is one instant.
+#[test]
+fn fractional_seconds_do_not_change_the_instant() {
+    let card: Value = serde_json::from_str(CARD).unwrap();
+    let at = |now: &str| -> Value {
+        let input = json!({"rateCard": card, "fields": saturday_120(), "availability": no_blocks(), "now": now});
+        serde_json::from_str(&evaluate(&input.to_string())).unwrap()
+    };
+    assert_eq!(at("2026-11-07T10:00:00Z")["validUntil"], at("2026-11-07T10:00:00.999Z")["validUntil"]);
+}
+
+/// Still strict about everything else -- this is a narrower allowance, not a loosening.
+#[test]
+fn still_rejects_malformed_instants() {
+    let card: Value = serde_json::from_str(CARD).unwrap();
+    for bad in [
+        "2026-11-07T10:00:00",       // no zone
+        "2026-11-07T10:00:00.123",   // fraction, still no zone
+        "2026-11-07T10:00:00.Z",     // empty fraction
+        "2026-11-07T10:00:00.12x3Z", // non-digit fraction
+        "2026-11-07 10:00:00Z",      // space, not T
+        "2026-11-07T10:00:60Z",      // bad second
+    ] {
+        let input = json!({"rateCard": card, "fields": saturday_120(), "availability": no_blocks(), "now": bad});
+        let out: Value = serde_json::from_str(&evaluate(&input.to_string())).unwrap();
+        assert_eq!(out["error"], "invalid_input", "{bad}");
+    }
+}

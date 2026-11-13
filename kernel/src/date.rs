@@ -58,7 +58,19 @@ pub const WEEKDAYS: [&str; 7] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"
 /// Parses `YYYY-MM-DDTHH:MM:SSZ` into epoch seconds.
 pub fn parse_instant(s: &str) -> Option<i64> {
     let b = s.as_bytes();
-    if b.len() != 20 || b[10] != b'T' || b[13] != b':' || b[16] != b':' || b[19] != b'Z' {
+    // `YYYY-MM-DDTHH:MM:SS` followed by either `Z` or a fractional part `.<digits>Z`. The fraction is
+    // truncated, never rounded, so both spellings of the same wall-clock second are one instant. The
+    // fractional form is accepted because the chain functions already stamp JavaScript's own
+    // `new Date().toISOString()` (which always carries milliseconds) into ledger `at` values; rejecting
+    // it here made `evaluate` disagree with the rest of the kernel about what a valid instant is.
+    if b.len() < 20 || b[10] != b'T' || b[13] != b':' || b[16] != b':' {
+        return None;
+    }
+    if b[19] == b'.' {
+        if b.len() < 22 || *b.last()? != b'Z' || !b[20..b.len() - 1].iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+    } else if b.len() != 20 || b[19] != b'Z' {
         return None;
     }
     let (days, _) = parse_date(&s[0..10])?;
