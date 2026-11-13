@@ -422,3 +422,77 @@ This session ran the real checklist (`docs/STRIPE-LIVE-PROOF.md`) against the li
   owner but never reconciled in the ledger — low priority (fictional data, no real money), but a real
   `payments` row sits in a permanently stale `created` state if anyone goes looking.
 OK (9 tenants, 102 entries, unchanged). `pnpm build` — succeeds.
+
+---
+
+# 2026-11-14 session: V2 proven live — a real phone, over real WhatsApp, end to end
+
+The last outstanding item from every previous session. A real message from a manually-approved sandbox
+number produced a real priced quote and a real Stripe payment link back on WhatsApp. Two genuine bugs
+stood between "code complete" and "working", neither of them findable without a live deployment.
+
+## Bug 1 (Meta-side config, not our code): the WABA was subscribed to the wrong app
+
+Symptom: the `GET` verify handshake succeeded (`[webhook] whatsapp handshake -> ok`), the dashboard showed
+the callback URL saved and the `messages` field subscribed, the app was switched to Live mode, and the
+sender's phone showed the message as delivered — yet **zero** HTTP requests of any kind reached the agent.
+Not a rejected one, not a malformed one: nothing.
+
+Root cause, found by querying the Graph API directly rather than reading dashboard screens
+(`GET /{waba-id}/subscribed_apps`): the WhatsApp Business Account was subscribed to
+`WA DevX Webhook Events 1P App` (id `2202427980234937`, Meta's own first-party app that powers the
+dashboard's webhook preview) and **not** to `e2p-test` (id `1445980550982786`). Setting a Callback URL in
+the dashboard configures *where a subscribed app receives events*; it does not subscribe the WABA to your
+app. That is a separate call the sandbox flow never makes, and nothing in the UI indicates it is missing —
+the handshake succeeding actively suggests the opposite.
+
+Fix: `POST /{waba-id}/subscribed_apps` with the app's own token. `docs/SETUP.md` §5.2 now carries this step.
+
+**Ruling:** when a Meta webhook verifies but never delivers, check `subscribed_apps` on the WABA first.
+The dashboard cannot show this discrepancy and the handshake is not evidence against it.
+
+## Bug 2 (ours): the kernel rejected every real clock reading
+
+Once events started arriving, every enquiry failed with `kernel error: invalid_input`, repeated ~5x as
+Meta retried the delivery.
+
+Root cause: `kernel/src/date.rs`'s `parse_instant` required **exactly** 20 bytes
+(`YYYY-MM-DDTHH:MM:SSZ`), but JavaScript's `new Date().toISOString()` always carries milliseconds
+(24 bytes). `agent/src/server/app.ts`'s WhatsApp route passes the real clock; `runChat`'s default
+`now` is the frozen literal `"2026-11-07T10:00:00Z"`, which is why `/chat` and every test had never hit
+this. The WhatsApp webhook was the first code path ever to feed the kernel a real clock.
+
+The deeper defect was an inconsistency *inside* the kernel: the chain functions already accept and stamp
+millisecond timestamps into ledger `at` values (the Stripe `collected` entry from 2026-11-13 reads
+`2026-11-13T18:00:05.945Z`), while `evaluate` rejected the identical string shape. Fixing the one call
+site would have left the same trap for `/tick`, which also reads the real clock.
+
+Fix (TDD, red first): `parse_instant` now accepts an optional `.<digits>` fraction before the `Z`,
+truncated never rounded; everything else stays strict. Three new tests in `kernel/tests/evaluate.rs` cover
+the millisecond form, that fractional seconds name the same instant, and that six malformed shapes are
+still `invalid_input`.
+
+**Ruling:** sub-second precision is truncated, not rounded — both spellings of one wall-clock second are
+one instant. This is a narrower allowance, not a loosening of the deterministic core.
+
+## Evidence
+A real WhatsApp reply quoting ₹6,10,650 across five kernel-produced lines, with a live
+`buy.stripe.com/test_...` link. The quote reads **valid until 20 Nov 2026** — seven days from the real
+current date, where every prior quote read 14 Nov (seven days from the frozen demo date). That difference
+is the proof the real clock now reaches the kernel.
+
+## Also done this session
+- A `/privacy` page (`src/app/privacy/page.tsx`), required to publish the Meta app. Honest about what the
+  demo actually collects: Google sign-in profile, hashed WhatsApp numbers, and provider-side payment refs.
+- `WHATSAPP_TOKEN` rotated (sandbox "Try it out" tokens expire ~24h, as `docs/SETUP.md` §5.1 warned).
+
+## Still open
+- **`WHATSAPP_TOKEN` expires roughly daily.** Outbound replies will start failing silently about 24h after
+  each rotation. Needs a System User permanent token (Business Settings → Users → System Users, scopes
+  `whatsapp_business_messaging` + `whatsapp_business_management`, expiry Never) before this demo is
+  reliable unattended.
+- **`PAYMENTS_PROVIDER=stripe` is still set on Render**, so every tenant on the public playground gets
+  Stripe rather than Razorpay. Intended as temporary for V13's proof; switch back or remove.
+- The DB-backed agent test suite has NOT been run since the kernel change (Docker was down on the author's
+  machine; the Rust kernel suite, site tests and lint were all green). Run `pnpm test` with Docker up.
+- `live-proof-01`'s stale `created` payment row, unchanged from the previous session's note.
