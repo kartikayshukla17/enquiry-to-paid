@@ -330,4 +330,95 @@ live URL" step; everything else was built and fully tested now.
 `pnpm test` — 74 agent/site vitest files, 877 tests (40 new), + the full Rust kernel `cargo test` suite — all
 green. `pnpm lint` (eslint + agent typecheck) — clean. `pnpm adversarial` — 50/50 refused or answered
 honestly, 0 quotes issued (unchanged — this ticket added no new pricing/wording logic). `pnpm ledger verify` —
+
+---
+
+# 2026-11-13 session: V1 deployed (Render + Vercel); V13 actually proven live
+
+Method: owner drove both dashboards (Render, Vercel, Google Cloud Console, Razorpay, Stripe, Meta) live,
+one step at a time, with the assistant navigating, reading logs, and querying the database directly to
+verify each step rather than trusting a dashboard's own success message. No ticket work beyond V1/V13 in
+this session; V2 (WhatsApp) still waits on the same webhook-URL step, now unblocked by this deploy.
+
+## V1 — deployed
+- **Render** (agent): `https://enquiry-to-paid.onrender.com`. **Vercel** (site):
+  `https://enquiry-to-paid.vercel.app`. Both free-tier, per `docs/DEPLOY.md`.
+- Three real deploy-time bugs found and fixed, none caught by the test suite (none of them are testable
+  without an actual PaaS environment):
+  1. **`corepack enable` fails on Render**: `EROFS: read-only file system, unlink '/usr/bin/pnpm'` — Render's
+     Node 24 image ships pnpm pre-wired via corepack at that exact path already; re-linking it is refused.
+     Fix: drop `corepack enable &&` from the build command entirely (pnpm's already on `PATH` and already
+     honors the `packageManager` pin). `docs/DEPLOY.md` corrected.
+  2. **`pnpm serve` fails on Render**: the script hardcodes `tsx --env-file=.env`, which fails hard
+     (`node: .env: not found`) on any platform that injects env vars directly rather than via a file. Fix:
+     added `agent/package.json`'s `start` script (same `serve.ts`, no `--env-file`); Render's Start Command
+     is `pnpm start`, not `pnpm serve` (that one stays for local dev, where the file exists).
+  3. **Kernel WASM never built on Render**: `agent/src/server/serve.ts` needs `kernel/dist/kernel.wasm`, which
+     only `pnpm build:kernel` produces, which needs a Rust toolchain CI installs via a GitHub Action
+     (`dtolnay/rust-toolchain`) not available as a plain Render build-command primitive, and which Root
+     Directory `agent` never reaches anyway (sibling `kernel/` dir). Fix: Render's Build Command now installs
+     a minimal `rustup` toolchain, adds the `wasm32-unknown-unknown` target, builds the kernel the same way CI
+     does, copies the `.wasm`, then runs the usual `pnpm install` — see `docs/DEPLOY.md` for the exact command.
+- **Unrelated but blocking**: Next.js was pinned at `15.5.4`, affected by CVE-2026-96889 (unauthenticated RCE
+  via SVG processing on glibc Linux, fixed in `15.5.28`) — Vercel's own dependency-security check refused to
+  deploy until this was bumped. Bumped `next` and `eslint-config-next` to `15.5.28` (same major, not 16).
+- Wiring-up steps completed live: `BETTER_AUTH_URL` set on Render to the Vercel URL; Google OAuth production
+  redirect URI added (`.../api/auth/callback/google` — not `/login`, a mistake caught and corrected); Razorpay
+  webhook re-pointed at the Vercel URL; GitHub Actions `/tick` secrets not yet wired (still open, see below).
+- Confirmed live end-to-end: a `/simulator` enquiry through `Vercel -> Render -> Groq -> Supabase` returned a
+  real quote. Render's free-tier cold start produced one transient 502 on the very first hit after idle,
+  exactly the documented tradeoff in `docs/DEPLOY.md` — not a bug, resolved on retry.
+
+## V13 — actually proven live this time, not just audited
+The 2026-11-11 session's V13 work was code-complete but necessarily unproven (no deployment existed yet).
+This session ran the real checklist (`docs/STRIPE-LIVE-PROOF.md`) against the live deploy:
+- Stripe's **newer Event Destinations** flow was used (not the classic Webhooks UI) — confirmed via live
+  research that it signs requests identically (`Stripe-Signature: t=...,v1=...`, same `whsec_` secret) and,
+  with "Snapshot" payload style (not "Thin"), sends the same full-object shape `stripe-sim.ts`'s `parseEvent`
+  already expects. No code change needed; this is now a documented fact, not an assumption.
+- First real attempt failed outright: the live playground had been defaulting to the **real Razorpay**
+  adapter the whole time (not a simulator) once `RAZORPAY_KEY_ID`/`SECRET` were set on Render, and a
+  150-guest wedding quote (₹6,10,650) exceeds Razorpay's Payment Links amount ceiling. Not a bug — Razorpay
+  was already proven live on 2026-11-10 at a smaller amount; this just needed `PAYMENTS_PROVIDER=stripe` to
+  actually route this test to Stripe instead, which took a second attempt (the env var wasn't saved the
+  first time).
+- **A real, previously-undetected bug, found and fixed**: once routed to Stripe, the webhook fired, returned
+  `200 {"status":"collected"}`, and Stripe's own delivery log confirmed it — but the database showed no
+  `collected` ledger entry, `payments.status` still `created`, `threads.state` still `quoted`. Root-caused by
+  reading `agent/src/tenancy/with-tenant.ts` directly (its own doc comment names the exact failure mode):
+  `withTenant` runs `BEGIN; SET LOCAL ROLE e2p_app; SET LOCAL app.tenant_id; <writes>; COMMIT` as one
+  transaction, which **requires** every statement to land on the same physical Postgres backend. The
+  deployed `DATABASE_URL` used Supabase's port-6543 **transaction-mode** pooler, which can silently hand
+  different statements to different backends — so the RLS-gated writes (ledger entry, `payments` update,
+  `threads` update) silently affected zero rows, while the one write without an RLS dependency
+  (`payment_events`, the idempotency record) committed normally. No exception, no error log, nothing to
+  grep for — only a direct query of the actual database rows surfaced it. Fixed by switching `DATABASE_URL`
+  to the port-5432 **session** pooler, on Render and in the owner's local `agent/.env`. `docs/SETUP.md`'s own
+  §1.2 had previously claimed "6543 also works" for this exact reason — that line was wrong and is now
+  corrected to describe the real failure instead of downplaying it.
+- Re-ran the full proof with a fresh `customerRef` after the fix: real Stripe Payment Link
+  (`buy.stripe.com/test_...`), paid with Stripe's test card, webhook fired, ledger entry **#21** —
+  `collected 61065000 minor units INR via stripe event evt_1UbOldJGtSewIAIxgHNEcYYL`, chain verified,
+  `billable: yes`. This is the same category of evidence Razorpay already had from 2026-11-10.
+- The first (broken) attempt's payment row (`tenant-web-banquet:pay:194`, thread `...live-proof-01`) is left
+  as-is — fictional test data, `status: created`, never paid, harmless to leave orphaned.
+
+## Rulings
+- `DATABASE_URL` must always be the Supabase **session pooler** (port 5432), never the transaction pooler
+  (6543), for any process that uses `withTenant` — which is every tenant-scoped write path in this codebase.
+  This is now stated as a hard requirement in `docs/SETUP.md`, not a soft preference.
+- `PAYMENTS_PROVIDER=stripe` was left set on Render during this session's testing (see `docs/
+  STRIPE-LIVE-PROOF.md` step 3's own warning: it routes *every* tenant on the public playground to Stripe,
+  not just the one being tested) — the owner was told to switch it back to `razorpay` (or remove it) once
+  this proof was done.
+
+## Still open after this session
+- GitHub Actions secrets for V7's `/tick` (`AGENT_TICK_URL`, `TICK_SECRET`) — generated but not yet set as
+  repo secrets; the workflow has never actually fired against the live deployment.
+- V2 (WhatsApp): credentials are gathered (`WHATSAPP_TOKEN`/`PHONE_NUMBER_ID`/`APP_SECRET`/`VERIFY_TOKEN` all
+  in the owner's local `agent/.env`), but Meta's webhook config was never pointed at the now-live URL, and no
+  real sandbox-number message has been sent end to end yet.
+- Stripe's checkout session from the first, broken live-proof attempt (`live-proof-01`) was paid by the
+  owner but never reconciled in the ledger — low priority (fictional data, no real money), but a real
+  `payments` row sits in a permanently stale `created` state if anyone goes looking.
 OK (9 tenants, 102 entries, unchanged). `pnpm build` — succeeds.
